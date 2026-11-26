@@ -21,3 +21,6 @@ node_modules/
 # demo recording output (tools/demo)
 tools/demo/frames/
 tools/demo/done.txt
+
+# release builds (published on GitHub, not committed)
+release/

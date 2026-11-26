@@ -27,7 +27,19 @@ for you (their dwarf climbs up to the surface with a green "!").
   moon.
 - **Click a dwarf or a sign** to open that session in the Claude desktop app.
 
-## Running it
+## Download (Windows)
+
+1. Install [Node.js](https://nodejs.org) 18 or later, if you don't have it.
+2. Download `Dwarfwatch-…-win-x64.zip` from the [latest release](https://github.com/MtnGoatDK/dwarfwatch/releases/latest)
+   and unzip it anywhere.
+3. Run `Dwarfwatch.exe`. It opens the mine in a small always-on-top window and starts its server itself.
+
+Use Claude Code on the same computer (the desktop app or the CLI) and your sessions appear as dwarves.
+The exe includes .NET, so nothing else needs installing. It isn't code-signed, so Windows SmartScreen
+may ask you to confirm the first time (More info → Run anyway). Set your working hours with the ☀
+button.
+
+## Running it from source
 
 Requirements: [Node.js](https://nodejs.org) 18 or later, and Claude Code on the same machine.
 

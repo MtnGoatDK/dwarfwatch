@@ -41,16 +41,10 @@
   const BEARDS = ['#c96e26', '#c96e26', '#a8522a', '#8b5a2b', '#d9a441', '#bdb7ad', '#3a2a20']; // mostly ginger
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
 
-  // 16 x 16 pixel dwarf, front-facing and stocky: a wide, flat, dark miner's helmet with its visor
-  // jutting forward and a big lamp on a raised housing; eyes and a nose between helmet and beard; a huge
-  // beard (shaded on one side, a few lighter streaks) from under the eyes to the belt; a grey-brown
-  // tunic with the hands at the bottom corners, a dark hem and two chunky boots. The pickaxe is drawn
-  // separately. Legs come in three frames.
-  // The user's own dwarf, read from their image on its best-fitting block grid (one block = one pixel)
-  // with their painted pickaxe taken out, since ours is drawn separately to swing and show the tier:
-  // dark helmet with a grey lamp housing and lamp, a grey brim, eyes and skin under it, a big orange
-  // beard with darker shading, grey-brown arms with the hands low, a hem band and two dark boots.
-  // It faces right (mirrored to walk left).
+  // The lead dwarf, 10 x 15 pixels, facing right (mirrored to walk left): a dark miner's helmet with a
+  // grey lamp housing and a lamp, a grey brim, eyes and a nose under it, a big orange beard with darker
+  // shading, grey-brown arms with the hands low, a hem band, and legs in three frames. The pickaxe is
+  // drawn separately, so it can swing and show the model's tier.
   const BODY = [
     '.....qq...',
     '...HhLlq..',
@@ -1078,7 +1072,7 @@
     const tone = (hex, k) => '#' + [1, 3, 5].map((i) => Math.min(255, Math.round(parseInt(hex.slice(i, i + 2), 16) * k))
       .toString(16).padStart(2, '0')).join('');
     const pal = {
-      // colours sampled from the user's dwarf
+      // the dwarf's base colours (looks and Customise change some of them)
       H: '#212b33', h: '#44474d', q: '#8a8d8f', L: '#fdea46', l: '#fcf59f', Y: '#edbc36', // helmet, brim, housing, lamp
       s: '#d5a076', S: '#bb8565', e: '#212b33', N: '#f0b88e', n: '#d8785e', u: '#d48e69', K: '#1e1a1a',               // skin, hands, eyes, noses
       b: beard, B: tone(beard, 0.8), d: tone(beard, 1.18), D: tone(beard, 0.62),          // beard, its shadow, streaks, braid shadow
