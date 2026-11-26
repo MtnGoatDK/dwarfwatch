@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Agent Watch</title>
+<title>Dwarfwatch</title>
 <link rel="icon" id="favicon" href="data:,">
 <style>
   :root {
@@ -354,7 +354,7 @@
 <body>
 <div class="wrap">
   <header>
-    <h1>Agent Watch</h1>
+    <h1>Dwarfwatch</h1>
     <p id="summary">Connecting…</p>
     <button id="popout" type="button" hidden
             title="Open the mine in a small always-on-top window that you can drag to a corner of the screen">Pop out</button>
@@ -380,7 +380,7 @@
     <div class="tip" hidden></div>
   </div>
 
-  <div id="offline" role="alert" hidden>Lost contact with the local server. Start it with <code>node agent-watch/server.js</code>.</div>
+  <div id="offline" role="alert" hidden>Lost contact with the local server. Start it with <code>node dwarfwatch/server.js</code>.</div>
   <div id="server-error" role="alert" hidden>The server hit an error building the status. Its console has the details.</div>
   <!-- announced to screen readers only when the list of sessions waiting on you changes -->
   <p id="live" class="sr-only" aria-live="polite"></p>
@@ -614,7 +614,7 @@ function render(state) {
     b.textContent = nReady + ' need' + (nReady === 1 ? 's' : '') + ' your input';
     summary.append(b, ` · ${nBusy} working · ${groups.done.length} finished · ${nWorkers} subagent${nWorkers === 1 ? '' : 's'} digging`);
   }
-  document.title = (nReady ? `(${nReady}) Needs input · ` : '') + 'Agent Watch';
+  document.title = (nReady ? `(${nReady}) Needs input · ` : '') + 'Dwarfwatch';
   renderOverlay(groups);
   renderUsage(state.usage);
   followHash();
@@ -637,7 +637,7 @@ for (const li of document.querySelectorAll('.legend li')) li.prepend(clone('#pic
 // Two ways to get a small always-on-top view of the mine:
 // - "Pop out": Chrome and Edge's Document Picture-in-Picture window. The mine moves into it with a
 //   one-line status bar; closing it moves the mine back. Chrome always shows the site address on top.
-// - The overlay app (agent-watch/overlay): a borderless WebView2 window that loads this page with
+// - The overlay app (dwarfwatch/overlay): a borderless WebView2 window that loads this page with
 //   ?overlay=1. The page then shows only the status bar and the mine, and talks to the app through
 //   window.chrome.webview: the bar is a drag region that moves the window, its buttons open the full
 //   page or close the overlay.
@@ -676,15 +676,15 @@ function makeOverlayBar(doc, buttons) {
 // Opens the full page, from the overlay app or a plain ?overlay=1 tab, at a session (#s=<id>) or lane.
 function openFull(hash = '') {
   if (appHost) appHost.postMessage({ type: 'open', hash });
-  else window.open('/' + hash, 'agent-watch');
+  else window.open('/' + hash, 'dwarfwatch');
 }
 
 if (overlayMode) {
   document.body.className = 'overlay';
   $('.wrap').hidden = true;
   overlayBar = makeOverlayBar(document, appHost
-    ? [['☀', 'Day & night hours', () => openSchedule()], ['⤢', 'Open the full Agent Watch page', () => openFull()], ['✕', 'Close the overlay', () => appHost.postMessage({ type: 'close' })]]
-    : [['☀', 'Day & night hours', () => openSchedule()], ['⤢', 'Open the full Agent Watch page', () => openFull()]]);
+    ? [['☀', 'Day & night hours', () => openSchedule()], ['⤢', 'Open the full Dwarfwatch page', () => openFull()], ['✕', 'Close the overlay', () => appHost.postMessage({ type: 'close' })]]
+    : [['☀', 'Day & night hours', () => openSchedule()], ['⤢', 'Open the full Dwarfwatch page', () => openFull()]]);
   mineEl.dataset.fit = 'both';
   overlayUsage = makeOverlayUsage(document);
   document.body.append(overlayBar, overlayUsage, mineEl);
@@ -705,10 +705,10 @@ async function popOut() {
   }
   pip = win;
   for (const style of document.querySelectorAll('style')) win.document.head.append(style.cloneNode(true));
-  win.document.title = 'Agent Watch';
+  win.document.title = 'Dwarfwatch';
   win.document.body.className = 'overlay';
 
-  overlayBar = makeOverlayBar(win.document, [['⤢', 'Show the full Agent Watch page', () => window.focus()]]);
+  overlayBar = makeOverlayBar(win.document, [['⤢', 'Show the full Dwarfwatch page', () => window.focus()]]);
   overlayUsage = makeOverlayUsage(win.document);
   win.document.body.append(overlayBar, overlayUsage, mineEl);
   mineEl.dataset.fit = 'both';
@@ -817,7 +817,7 @@ function showCard(id) {
 // Asks the server to open a session in the Claude desktop app (the server runs the claude:// link, so the
 // browser never shows its "open external app?" prompt). Only desktop-app sessions can be opened.
 function openInClaude(id) {
-  fetch('/api/open', { method: 'POST', headers: { 'X-Agent-Watch': '1' }, body: id })
+  fetch('/api/open', { method: 'POST', headers: { 'X-Dwarfwatch': '1' }, body: id })
     .then((res) => { if (!res.ok) console.warn('Could not open the session in Claude:', res.status); })
     .catch((err) => console.warn('Could not open the session in Claude:', err));
 }
@@ -844,7 +844,7 @@ Mine.init(mineEl, {
 });
 
 function postOre(body, done) {
-  fetch('/api/ore', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Agent-Watch': '1' }, body: JSON.stringify(body) })
+  fetch('/api/ore', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Dwarfwatch': '1' }, body: JSON.stringify(body) })
     .catch((err) => console.warn('Could not report the ore:', err))
     .finally(done);
 }
@@ -1088,7 +1088,7 @@ function crewEditor(d, rowPic) {
     note.textContent = 'Saving…';
     try {
       const res = await fetch('/api/dwarf', {
-        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Agent-Watch': '1' }, body: JSON.stringify(body),
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Dwarfwatch': '1' }, body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error('HTTP ' + res.status);
     } catch (err) {
@@ -1284,7 +1284,7 @@ function openSchedule() {
     note.textContent = 'Saving…';
     try {
       const res = await fetch('/api/settings', {
-        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Agent-Watch': '1' },
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Dwarfwatch': '1' },
         body: JSON.stringify({ schedule: draft }),
       });
       if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -1322,7 +1322,7 @@ const store = {
   get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
   set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } },
 };
-let alertsOn = store.get('agent-watch-alerts') === '1';
+let alertsOn = (store.get('dwarfwatch-alerts') || store.get('agent-watch-alerts')) === '1'; // (the old name's setting still counts)
 let audio = null;
 const alertsBtn = $('#alerts');
 
@@ -1344,7 +1344,7 @@ document.addEventListener('keydown', (e) => { if (e.target !== alertsBtn) unlock
 
 alertsBtn.addEventListener('click', () => {
   alertsOn = !alertsOn;
-  store.set('agent-watch-alerts', alertsOn ? '1' : '0');
+  store.set('dwarfwatch-alerts', alertsOn ? '1' : '0');
   if (alertsOn) {
     unlockSound();
     if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
@@ -1429,7 +1429,7 @@ async function tick(gen) {
       applySchedule(state.schedule);
       Mine.sync(state);
     } catch (err) {
-      console.error('Agent Watch could not draw this update:', err); // a page bug, not a lost server
+      console.error('Dwarfwatch could not draw this update:', err); // a page bug, not a lost server
     }
   }
   if (gen === pollGen) schedulePoll(1000);

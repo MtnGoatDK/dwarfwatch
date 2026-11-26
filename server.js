@@ -1,5 +1,5 @@
 'use strict';
-// Agent Watch: local visualiser for running Claude Code sessions and their subagents.
+// Dwarfwatch: local visualiser for running Claude Code sessions and their subagents.
 // Read-only. Data comes from ~/.claude/sessions (live status) and ~/.claude/projects (transcripts).
 // Zero dependencies: node server.js
 
@@ -319,8 +319,20 @@ function listAgents(transcript, now) {
 // free dwarf who has worked in the same project folder, else the one who has rested longest; a new dwarf
 // is hired only when everyone is busy. A dwarf earns 1 XP per tool call made in its sessions, and its
 // level follows from its XP. The roster lives with the overlay's other data, outside the project.
-const ROSTER_FILE = process.env.AGENT_WATCH_ROSTER || path.join(
-  process.env.LOCALAPPDATA || path.join(os.homedir(), '.local', 'share'), 'AgentWatch', 'roster.json');
+const DATA_ROOT = process.env.LOCALAPPDATA || path.join(os.homedir(), '.local', 'share');
+const ROSTER_FILE = process.env.DWARFWATCH_ROSTER || process.env.AGENT_WATCH_ROSTER || path.join(DATA_ROOT, 'Dwarfwatch', 'roster.json');
+// The project used to be called Agent Watch: on first start, bring the roster and settings over from its
+// folder (the old folder stays as it was, as a backup).
+(function bringOverOldData() {
+  if (process.env.DWARFWATCH_ROSTER || process.env.AGENT_WATCH_ROSTER) return;
+  const oldDir = path.join(DATA_ROOT, 'AgentWatch'), newDir = path.dirname(ROSTER_FILE);
+  for (const name of ['roster.json', 'settings.json']) {
+    const from = path.join(oldDir, name), to = path.join(newDir, name);
+    try {
+      if (!fs.existsSync(to) && fs.existsSync(from)) { fs.mkdirSync(newDir, { recursive: true }); fs.copyFileSync(from, to); }
+    } catch (err) { console.warn('could not bring over ' + name + ':', err.message); }
+  }
+})();
 const XP_STEP = 20; // XP for level 2; each level after needs XP_STEP more than the one before
 
 // Level from XP: level n starts at XP_STEP * n * (n - 1) / 2 (0, 20, 60, 120, 200, 300, …).
@@ -806,8 +818,8 @@ http.createServer((req, res) => {
   const url = req.url.split('?')[0];
   if (url === '/api/open') {
     // POST with a custom header: a page on another site can't send that without a CORS preflight,
-    // which this server never approves, so only Agent Watch's own page can open sessions.
-    if (req.method !== 'POST' || req.headers['x-agent-watch'] !== '1') { res.writeHead(403).end(); return; }
+    // which this server never approves, so only Dwarfwatch's own page can open sessions.
+    if (req.method !== 'POST' || req.headers['x-dwarfwatch'] !== '1') { res.writeHead(403).end(); return; }
     let body = '';
     req.on('data', (chunk) => { body += chunk; if (body.length > 200) req.destroy(); });
     req.on('end', () => {
@@ -824,8 +836,8 @@ http.createServer((req, res) => {
     return;
   }
   if (url === '/api/dwarf') {
-    // same guard as /api/open: only Agent Watch's own page can send this custom header
-    if (req.method !== 'POST' || req.headers['x-agent-watch'] !== '1') { res.writeHead(403).end(); return; }
+    // same guard as /api/open: only Dwarfwatch's own page can send this custom header
+    if (req.method !== 'POST' || req.headers['x-dwarfwatch'] !== '1') { res.writeHead(403).end(); return; }
     let body = '';
     req.on('data', (chunk) => { body += chunk; if (body.length > 2000) req.destroy(); });
     req.on('end', () => {
@@ -837,8 +849,8 @@ http.createServer((req, res) => {
     return;
   }
   if (url === '/api/ore') {
-    // same guard as /api/open: only Agent Watch's own page can send this custom header
-    if (req.method !== 'POST' || req.headers['x-agent-watch'] !== '1') { res.writeHead(403).end(); return; }
+    // same guard as /api/open: only Dwarfwatch's own page can send this custom header
+    if (req.method !== 'POST' || req.headers['x-dwarfwatch'] !== '1') { res.writeHead(403).end(); return; }
     let body = '';
     req.on('data', (chunk) => { body += chunk; if (body.length > 200) req.destroy(); });
     req.on('end', () => {
@@ -851,7 +863,7 @@ http.createServer((req, res) => {
   }
   if (url === '/api/settings') {
     // same guard as /api/open; body { schedule: { days, windows } } or { schedule: null } for the default
-    if (req.method !== 'POST' || req.headers['x-agent-watch'] !== '1') { res.writeHead(403).end(); return; }
+    if (req.method !== 'POST' || req.headers['x-dwarfwatch'] !== '1') { res.writeHead(403).end(); return; }
     let body = '';
     req.on('data', (chunk) => { body += chunk; if (body.length > 2000) req.destroy(); });
     req.on('end', () => {
@@ -890,5 +902,5 @@ http.createServer((req, res) => {
     res.writeHead(404).end();
   }
 }).listen(PORT, '127.0.0.1', () => {
-  console.log(`Agent Watch running at http://localhost:${PORT}`);
+  console.log(`Dwarfwatch running at http://localhost:${PORT}`);
 });

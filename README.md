@@ -1,8 +1,8 @@
-# Agent Watch
+# Dwarfwatch
 
 A little pixel-art dwarven mine that shows what your Claude Code sessions are doing.
 
-![Agent Watch demo](demo.gif)
+![Dwarfwatch demo](demo.gif)
 
 Each running Claude Code session is a dwarf digging its own tunnel; subagents are gnomes that come down
 to help. You can see at a glance which sessions are working, which have finished, and which are waiting
@@ -49,7 +49,7 @@ Requirements: the .NET 10 SDK and the WebView2 runtime (part of current Windows)
 ```
 cd overlay
 dotnet publish -c Release -o app
-app\AgentWatch.Overlay.exe
+app\Dwarfwatch.exe
 ```
 
 Drag it by its top bar; hold **Alt** while dragging to place it without snapping.
@@ -80,8 +80,9 @@ the estimate drifts over time; update the file now and then.
 ### Your data
 
 Everything stays on your machine. The overlay keeps its window position, and the server keeps the dwarf
-roster, the ore and your day-and-night hours, in `%LOCALAPPDATA%\AgentWatch\` (`~/.local/share/AgentWatch`
-elsewhere).
+roster, the ore and your day-and-night hours, in `%LOCALAPPDATA%\Dwarfwatch\` (`~/.local/share/Dwarfwatch`
+elsewhere). It used to be called Agent Watch; data in an old `AgentWatch` folder is copied over on first
+start, and the old `AGENT_WATCH_*` settings below still work.
 
 ### Settings
 
@@ -89,7 +90,7 @@ elsewhere).
 | --- | --- | --- |
 | `PORT` | `4777` | the server's port |
 | `CLAUDE_CONFIG_DIR` | `~/.claude` | where Claude Code keeps its sessions and transcripts |
-| `AGENT_WATCH_ROSTER` | `%LOCALAPPDATA%\AgentWatch\roster.json` | the dwarf roster and ore file |
+| `DWARFWATCH_ROSTER` | `%LOCALAPPDATA%\Dwarfwatch\roster.json` | the dwarf roster and ore file |
 | `CONTEXT_WINDOW` | `1000000` | the context window size the tunnel signs measure against |
-| `AGENT_WATCH_PORT` | `4777` | the port the overlay app connects to |
-| `AGENT_WATCH_SERVER` | found next to the app | the `server.js` the overlay app starts when none is running |
+| `DWARFWATCH_PORT` | `4777` | the port the overlay app connects to |
+| `DWARFWATCH_SERVER` | found next to the app | the `server.js` the overlay app starts when none is running |

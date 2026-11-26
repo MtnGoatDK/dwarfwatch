@@ -5,7 +5,7 @@ using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
-namespace AgentWatch.Overlay;
+namespace Dwarfwatch.Overlay;
 
 /// <summary>
 /// An always-on-top window with no title bar that shows http://localhost:4777/?overlay=1.
@@ -17,10 +17,10 @@ namespace AgentWatch.Overlay;
 /// </summary>
 sealed class OverlayForm : Form
 {
-    static readonly string Port = Environment.GetEnvironmentVariable("AGENT_WATCH_PORT") ?? "4777";
+    static readonly string Port = Environment.GetEnvironmentVariable("DWARFWATCH_PORT") ?? Environment.GetEnvironmentVariable("AGENT_WATCH_PORT") ?? "4777";
     static readonly string Origin = $"http://localhost:{Port}";
     static readonly string DataDir = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AgentWatch");
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Dwarfwatch");
     static readonly string BoundsFile = Path.Combine(DataDir, "overlay.json");
 
     readonly WebView2 _web = new() { Dock = DockStyle.Fill, DefaultBackgroundColor = Color.FromArgb(18, 14, 11) };
@@ -31,7 +31,7 @@ sealed class OverlayForm : Form
 
     public OverlayForm()
     {
-        Text = "Agent Watch";
+        Text = "Dwarfwatch";
         Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); // the dwarf from icon.ico, for Alt+Tab
         BackColor = Color.FromArgb(18, 14, 11);
         FormBorderStyle = FormBorderStyle.Sizable;
@@ -85,7 +85,7 @@ sealed class OverlayForm : Form
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, "Agent Watch overlay could not start:\n\n" + ex.Message, "Agent Watch",
+            MessageBox.Show(this, "Dwarfwatch could not start:\n\n" + ex.Message, "Dwarfwatch",
                 MessageBoxButtons.OK, MessageBoxIcon.Error);
             Close();
         }
@@ -147,7 +147,7 @@ sealed class OverlayForm : Form
 
     static readonly string WaitingPage =
         "<html><body style=\"margin:0;height:100vh;display:grid;place-items:center;background:#120e0b;" +
-        "color:#b3a594;font:13px system-ui;app-region:drag\">Waiting for the Agent Watch server on " +
+        "color:#b3a594;font:13px system-ui;app-region:drag\">Waiting for the Dwarfwatch server on " +
         $"localhost:{Port}…</body></html>";
 
     /* ---------- server ---------- */
@@ -188,7 +188,7 @@ sealed class OverlayForm : Form
 
     static string? FindServerScript()
     {
-        var env = Environment.GetEnvironmentVariable("AGENT_WATCH_SERVER");
+        var env = Environment.GetEnvironmentVariable("DWARFWATCH_SERVER") ?? Environment.GetEnvironmentVariable("AGENT_WATCH_SERVER");
         if (!string.IsNullOrEmpty(env) && File.Exists(env)) return env;
         for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
         {
@@ -277,6 +277,9 @@ sealed class OverlayForm : Form
     {
         try
         {
+            // the project used to be called Agent Watch: bring its saved window position over once
+            var old = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AgentWatch", "overlay.json");
+            if (!File.Exists(BoundsFile) && File.Exists(old)) { Directory.CreateDirectory(DataDir); File.Copy(old, BoundsFile); }
             var b = JsonSerializer.Deserialize<SavedBounds>(File.ReadAllText(BoundsFile));
             if (b is null) return null;
             var rect = new Rectangle(b.X, b.Y, b.Width, b.Height);

@@ -1,4 +1,4 @@
-namespace AgentWatch.Overlay;
+namespace Dwarfwatch.Overlay;
 
 static class Program
 {
@@ -6,7 +6,7 @@ static class Program
     static void Main()
     {
         // One overlay at a time: starting it again does nothing while one is open.
-        using var single = new Mutex(true, @"Local\AgentWatch.Overlay", out var first);
+        using var single = new Mutex(true, @"Local\Dwarfwatch.Overlay", out var first);
         if (!first) return;
         ApplicationConfiguration.Initialize();
         Application.Run(new OverlayForm());

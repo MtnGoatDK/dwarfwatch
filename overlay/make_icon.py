@@ -1,4 +1,4 @@
-"""Builds icon.ico (and icon.png, a 256 px preview) for the Agent Watch overlay.
+"""Builds icon.ico (and icon.png, a 256 px preview) for the Dwarfwatch overlay.
 
 The icon is a 16 x 16 pixel-art dwarf head in the mine's style: miner's helmet with a lamp, ginger
 beard. Each size in the .ico is that grid scaled up by a whole number, so the pixels stay crisp.

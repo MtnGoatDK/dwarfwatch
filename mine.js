@@ -1,5 +1,5 @@
 'use strict';
-// Agent Watch mine: a small tile-based game engine that shows Claude sessions as dwarves.
+// Dwarfwatch mine: a small tile-based game engine that shows Claude sessions as dwarves.
 // Fixed-step loop, tile map, BFS pathfinding with ladders, cached pixel sprites, particles
 // and 2D lighting. The page calls Mine.init(container, { onSelect }) once and Mine.sync(state)
 // on every poll.
