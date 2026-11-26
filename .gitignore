@@ -1,0 +1,19 @@
+# overlay build output
+overlay/bin/
+overlay/obj/
+overlay/app/
+
+# your own plan-usage calibration (see usage-calibration.example.json)
+usage-calibration.json
+
+# design mock-ups and experiments, kept locally
+armour-tiers.png
+armour-tiers.py
+dwarf-vs-gnomes.png
+headframe-options.png
+tavern-before-after.png
+tavern-timber.png
+demo-hires/
+
+node_modules/
+*.tmp

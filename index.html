@@ -1,0 +1,1440 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Watch</title>
+<link rel="icon" id="favicon" href="data:,">
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f3f4f7;
+    --panel: #ffffff;
+    --line: #dfe2ea;
+    --text: #181b24;
+    --muted: #667085;
+    --busy: #2f6fe4;
+    --busy-soft: #e7eefc;
+    --ready: #0b9a5c;
+    --ready-soft: #dff6ea;
+    --done: #98a1b3;
+    --warn: #b54708;
+    --error: #d92d20;
+    --shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 6px 20px rgba(16, 24, 40, .05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1117;
+      --panel: #161a23;
+      --line: #262c3a;
+      --text: #e9ebf1;
+      --muted: #8b93a7;
+      --busy: #6ea8fe;
+      --busy-soft: #18243b;
+      --ready: #3ddc97;
+      --ready-soft: #12301f;
+      --done: #5d6578;
+      --warn: #f5b83d;
+      --error: #f97066;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .25);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 24px 20px 64px; }
+
+  header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 10px; }
+  h1 { font-size: 20px; font-weight: 650; letter-spacing: -.01em; margin: 0; }
+  #summary { margin: 0; color: var(--muted); flex: 1; min-width: 200px; }
+  #summary b { color: var(--ready); font-weight: 600; }
+  button {
+    font: inherit; color: inherit; cursor: pointer;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
+    padding: 6px 14px;
+  }
+  button[aria-pressed="true"] { border-color: var(--ready); color: var(--ready); }
+  button:focus-visible { outline: 2px solid var(--busy); outline-offset: 2px; }
+
+  /* pickaxe legend */
+  [data-tier="wood"]    { --pick: #b07a45; --pick-edge: #6e4622; }
+  [data-tier="copper"]  { --pick: #d9803f; --pick-edge: #8a4520; }
+  [data-tier="iron"]    { --pick: #c3cbd4; --pick-edge: #66707b; }
+  [data-tier="gold"]    { --pick: #f5c531; --pick-edge: #9c7710; }
+  [data-tier="diamond"] { --pick: #7cf0f7; --pick-edge: #1f9fb0; }
+  .legend {
+    list-style: none; margin: 0 0 16px; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 16px;
+    font-size: 12px; color: var(--muted);
+  }
+  .legend li { display: flex; align-items: center; gap: 5px; }
+  .legend svg { width: 18px; height: 18px; }
+  .legend b { color: var(--text); font-weight: 600; }
+
+  /* the mine (drawn by mine.js) */
+  .mine-wrap {
+    position: relative; margin: 0 0 32px; border-radius: 14px; overflow: hidden;
+    background: #120e0b; box-shadow: var(--shadow);
+  }
+  .mine-wrap canvas { display: block; margin: 0 auto; image-rendering: pixelated; }
+  .mine-wrap .tip {
+    position: absolute; z-index: 1; pointer-events: none; max-width: 300px;
+    padding: 7px 10px; border-radius: 8px; white-space: pre-line;
+    background: rgba(18, 14, 11, .94); color: #f3e9dc; font-size: 12px; line-height: 1.4;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, .4);
+  }
+
+  /* plan usage, like the Claude app's "Your usage limits" card */
+  .usage { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px 24px; margin: 0 0 18px; max-width: 760px; }
+  .usage[hidden] { display: none; }
+  .u-row { display: grid; grid-template-columns: 1fr auto auto; gap: 2px 10px; align-items: baseline; font-size: 13px; }
+  .u-label { font-weight: 600; }
+  .u-reset, .u-pct { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .u-bar { grid-column: 1 / -1; height: 5px; border-radius: 999px; background: var(--line); overflow: hidden; }
+  .u-bar span { display: block; height: 100%; width: 0; background: var(--busy); border-radius: inherit; transition: width .4s; }
+  .u-row[data-level="high"] .u-bar span { background: var(--warn); }
+  .u-row[data-level="max"] .u-bar span { background: var(--error); }
+  .u-note { grid-column: 1 / -1; font-size: 11px; color: var(--muted); }
+  /* the overlay's slim version: two meters side by side under the status bar */
+  .ov-usage { flex: none; display: flex; gap: 12px; padding: 3px 10px 5px; background: #1b1511; border-bottom: 1px solid #2c231d; font-size: 11px; color: #b3a594; }
+  .ov-usage[hidden] { display: none; }
+  .ov-usage .u-mini { flex: 1; min-width: 0; display: grid; grid-template-columns: auto 1fr auto; gap: 6px; align-items: center; }
+  .ov-usage .u-bar { grid-column: auto; height: 4px; background: #2c231d; }
+  .ov-usage .u-bar span { background: #6ea8fe; }
+  .ov-usage [data-level="high"] .u-bar span { background: #f5b83d; }
+  .ov-usage [data-level="max"] .u-bar span { background: #f97066; }
+  .ov-usage .u-pct { color: #f3e9dc; }
+
+  .popped {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 32px; padding: 12px 16px;
+    border: 1px dashed var(--line); border-radius: 14px; color: var(--muted);
+  }
+  .popped[hidden] { display: none; }
+
+  /* pop-out overlay (a Document Picture-in-Picture window; these styles are copied into it) */
+  body.overlay {
+    margin: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+    background: #120e0b; color: #f3e9dc; font: 12px/1.3 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .ov-bar {
+    flex: none; display: flex; align-items: center; gap: 8px; padding: 4px 6px 4px 10px;
+    background: #1b1511; border-bottom: 1px solid #2c231d;
+  }
+  .ov-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: #8a8f99; }
+  .ov-bar[data-tone="ready"] .ov-dot { background: #3ddc97; box-shadow: 0 0 0 3px rgba(61, 220, 151, .25); }
+  .ov-bar[data-tone="busy"] .ov-dot { background: #6ea8fe; }
+  .ov-count { flex: none; font-weight: 600; }
+  .ov-bar[data-tone="ready"] .ov-count { color: #3ddc97; }
+  .ov-names { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #b3a594; }
+  .ov-bar { app-region: drag; -webkit-app-region: drag; } /* moves the window in the overlay app */
+  .ov-btn {
+    app-region: no-drag; -webkit-app-region: no-drag;
+    flex: none; padding: 0 6px; border: 0; border-radius: 4px; background: transparent;
+    color: #b3a594; font: 14px/20px system-ui, sans-serif; cursor: pointer;
+  }
+  .ov-btn:hover, .ov-btn:focus-visible { background: #2c231d; color: #f3e9dc; }
+  body.overlay .mine-wrap {
+    flex: 1; min-height: 0; margin: 0; border-radius: 0; box-shadow: none;
+    /* the world is built a little larger than the window: keep the sky at the top, trim the edges evenly */
+    display: flex; align-items: flex-start; justify-content: center;
+  }
+  body.overlay .mine-wrap canvas { flex: none; margin: 0; }
+
+  #offline, #server-error {
+    background: #b42318; color: #fff; border-radius: 10px;
+    padding: 10px 14px; margin-bottom: 20px;
+  }
+  #offline code { font-family: ui-monospace, Consolas, monospace; }
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
+
+  section { margin-bottom: 36px; }
+  h2 {
+    font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--muted); margin: 0 0 12px; display: flex; align-items: center; gap: 8px;
+  }
+  #ready h2 { color: var(--ready); }
+  .count {
+    font-size: 12px; letter-spacing: 0; min-width: 22px; text-align: center;
+    padding: 1px 7px; border-radius: 999px; background: var(--line); color: var(--text);
+  }
+  #ready .count { background: var(--ready); color: var(--bg); }
+  .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); }
+  .hint { color: var(--muted); margin: 0; }
+
+  .card {
+    --tone: var(--busy); --tone-soft: var(--busy-soft);
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    padding: 16px; box-shadow: var(--shadow); min-width: 0; scroll-margin: 24px;
+  }
+  .card[data-state="ready"] {
+    --tone: var(--ready); --tone-soft: var(--ready-soft);
+    border-color: var(--ready);
+    animation: beacon 2.4s ease-out infinite;
+  }
+  .card[data-state="done"] { --tone: var(--muted); --tone-soft: color-mix(in srgb, var(--line) 60%, transparent); }
+  .card[data-state="done"] .name { color: var(--muted); }
+  .card.flash { animation: flash 1.2s ease-out; }
+  @keyframes beacon {
+    0%   { box-shadow: var(--shadow), 0 0 0 0 color-mix(in srgb, var(--ready) 45%, transparent); }
+    70%  { box-shadow: var(--shadow), 0 0 0 10px transparent; }
+    100% { box-shadow: var(--shadow), 0 0 0 0 transparent; }
+  }
+  @keyframes flash {
+    0%, 40% { box-shadow: var(--shadow), 0 0 0 4px color-mix(in srgb, var(--tone) 60%, transparent); }
+    100%    { box-shadow: var(--shadow), 0 0 0 0 transparent; }
+  }
+
+  .top { display: flex; align-items: center; gap: 12px; }
+  .who { flex: 1; min-width: 0; }
+  .name { font-size: 15px; font-weight: 600; margin: 0; overflow-wrap: anywhere; }
+  .cwd {
+    margin: 2px 0 0; color: var(--muted); font: 12px ui-monospace, Consolas, monospace;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; direction: rtl; text-align: left;
+  }
+  .miner { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
+  .open-btn { flex: none; align-self: flex-start; padding: 2px 10px; font-size: 12px; white-space: nowrap; }
+  .open-btn[hidden] { display: none; }
+  .pill {
+    flex: none; align-self: flex-start; font-size: 12px; font-weight: 600; white-space: nowrap;
+    padding: 3px 10px; border-radius: 999px; background: var(--tone-soft); color: var(--tone);
+  }
+
+  .doing { display: flex; gap: 8px; align-items: baseline; margin: 12px 0 0; min-width: 0; }
+  .step { font-weight: 600; color: var(--tone); flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .detail { flex: 1; min-width: 0; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .age { flex: none; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 13px; }
+  .quiet { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
+
+  /* last prompt */
+  .prompt {
+    margin: 12px 0 0; padding: 7px 10px; font-size: 13px;
+    border-left: 3px solid var(--line); border-radius: 0 8px 8px 0;
+    background: color-mix(in srgb, var(--line) 35%, transparent);
+  }
+  .prompt-text {
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
+    overflow: hidden; overflow-wrap: anywhere;
+  }
+  .prompt-text::before { content: "You: "; color: var(--muted); font-weight: 600; }
+
+  /* subagents */
+  .crew { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 3px; font-size: 12px; }
+  .crew:empty { display: none; }
+  .crew li { display: flex; gap: 8px; align-items: baseline; min-width: 0; color: var(--muted); }
+  .crew li[data-state="done"] { opacity: .6; }
+  .crew svg { flex: none; width: 14px; height: 14px; align-self: center; }
+  .crew .cname { flex: none; max-width: 50%; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .crew .cstep { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* recent tool calls */
+  .feed { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 4px; font-size: 12px; }
+  .feed:empty, .card[data-state="ready"] .feed, .card[data-state="done"] .feed { display: none; }
+  .feed li { display: flex; gap: 8px; align-items: baseline; min-width: 0; color: var(--muted); }
+  .feed .dot { flex: none; align-self: center; width: 7px; height: 7px; border-radius: 50%; background: var(--done); }
+  .feed li[data-state="running"] .dot { background: var(--busy); animation: blink .9s steps(2, jump-none) infinite; }
+  .feed li[data-state="error"] .dot { background: var(--error); }
+  .feed li[data-state="stopped"] .dot { background: transparent; box-shadow: inset 0 0 0 1.5px var(--done); }
+  .feed .ftool { flex: none; max-width: 45%; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .feed .fdetail { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .feed .fage { flex: none; font-variant-numeric: tabular-nums; }
+  @keyframes blink { from { opacity: 1; } to { opacity: .25; } }
+
+  /* model and token meter */
+  .stats { display: flex; align-items: center; gap: 10px; margin: 14px 0 0; min-width: 0; font-size: 12px; color: var(--muted); }
+  .model {
+    flex: none; max-width: 48%; padding: 2px 8px; border: 1px solid var(--line); border-radius: 6px;
+    font: 12px ui-monospace, Consolas, monospace; color: var(--text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .meter { flex: 1; min-width: 32px; height: 6px; border-radius: 999px; background: var(--line); overflow: hidden; }
+  .meter span { display: block; height: 100%; width: 0; border-radius: inherit; background: var(--tone); transition: width .4s; }
+  .meter[data-level="high"] span { background: var(--warn); }
+  .tokens { flex: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+  /* the tavern: the whole crew, over the mine scene (in the page, the overlay and the pop-out alike) */
+  .tavern {
+    position: absolute; inset: 0; z-index: 3; display: flex; flex-direction: column; margin: 0;
+    background: rgba(20, 15, 11, .97); color: #f3e9dc; font: 12px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .tavern[hidden] { display: none; }
+  .tv-head {
+    flex: none; display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+    border-bottom: 1px solid #3a2e24; background: #1b1511;
+  }
+  .tv-head h2 { margin: 0; font-size: 14px; color: #ffe9b8; text-transform: none; letter-spacing: normal; }
+  .tv-count { flex: 1; color: #b3a594; }
+  .tv-btn {
+    border: 1px solid #4a3a2c; border-radius: 6px; background: #2c231d; color: #f3e9dc;
+    font: 600 12px system-ui, sans-serif; padding: 4px 10px; cursor: pointer;
+  }
+  .tv-btn:hover, .tv-btn:focus-visible { background: #3a2e24; }
+  .tv-btn.primary { background: #c8962c; border-color: #c8962c; color: #2a1c05; }
+  .tv-btn.primary:hover, .tv-btn.primary:focus-visible { background: #e0aa38; }
+  .tv-close { border: 0; background: transparent; color: #b3a594; font: 16px/1 system-ui, sans-serif; padding: 4px 6px; cursor: pointer; border-radius: 4px; }
+  .tv-close:hover, .tv-close:focus-visible { background: #2c231d; color: #f3e9dc; }
+  .tv-list { flex: 1; min-height: 0; overflow: auto; padding: 6px 10px 12px; }
+  .tv-empty { color: #b3a594; padding: 16px 4px; }
+  .tv-dwarf { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 12px; align-items: start; padding: 10px 0; border-bottom: 1px solid #2c231d; }
+  .tv-dwarf:last-child { border-bottom: 0; }
+  .tv-portrait { width: 48px; height: 60px; image-rendering: pixelated; background: #241b14; border-radius: 6px; }
+  .tv-name { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .tv-name b { font-size: 14px; color: #ffe9b8; }
+  .tv-level { font-weight: 800; color: #f5c542; }
+  .tv-xp { height: 5px; border-radius: 999px; background: #3a2e24; overflow: hidden; margin: 4px 0 2px; max-width: 260px; }
+  .tv-xp span { display: block; height: 100%; background: #f5c542; border-radius: inherit; }
+  .tv-sub { color: #b3a594; }
+  .tv-job[data-busy="true"] { color: #8fc0ff; }
+  .tv-editor { grid-column: 1 / -1; display: grid; grid-template-columns: auto 1fr; gap: 10px 14px; margin-top: 8px; padding: 10px; border-radius: 8px; background: #241b14; }
+  .tv-preview { width: 128px; height: 160px; image-rendering: pixelated; background: #1b1511; border-radius: 6px; grid-row: span 2; }
+  .tv-fields { display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; align-items: center; }
+  .tv-fields label { color: #b3a594; }
+  .tv-fields input[type="text"], .tv-fields select {
+    width: 100%; max-width: 220px; background: #1b1511; color: #f3e9dc; border: 1px solid #4a3a2c; border-radius: 5px; padding: 3px 6px; font: inherit;
+  }
+  .tv-colour { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+  .tv-swatch { width: 16px; height: 16px; border-radius: 3px; border: 1px solid rgba(0, 0, 0, .5); cursor: pointer; padding: 0; }
+  .tv-swatch:focus-visible { outline: 2px solid #f5c542; outline-offset: 1px; }
+  .tv-checks { display: flex; gap: 12px; flex-wrap: wrap; }
+  .tv-row { display: flex; gap: 6px; align-items: center; max-width: 260px; }
+  .tv-row input { flex: 1; min-width: 0; }
+  .tv-dice {
+    flex: none; width: 26px; height: 24px; padding: 0; border: 1px solid #4a3a2c; border-radius: 5px;
+    background: #2c231d; font: 14px/1 system-ui, sans-serif; cursor: pointer;
+  }
+  .tv-dice:hover, .tv-dice:focus-visible { background: #3a2e24; }
+  .tv-swatch[aria-pressed="true"] { outline: 2px solid #f5c542; outline-offset: 1px; }
+  /* any colour: one more swatch, a muted rainbow with a "+" until you pick your own colour, which then
+     fills it; the native picker sits invisibly on top so a click opens it */
+  .tv-any {
+    position: relative; display: inline-grid; place-items: center; width: 16px; height: 16px; margin-left: 2px;
+    border: 1px solid rgba(0, 0, 0, .5); border-radius: 3px; cursor: pointer; overflow: hidden;
+    background: conic-gradient(#b86b6b, #b8a463, #6fa36f, #63a0b8, #7d74b0, #b06ba0, #b86b6b);
+    color: #f3e9dc; font: 700 12px/1 system-ui, sans-serif; text-shadow: 0 0 2px #000, 0 0 1px #000;
+  }
+  .tv-any[data-on="true"] { overflow: visible; outline: 2px solid #f5c542; outline-offset: 1px; color: transparent; text-shadow: none; }
+  .tv-any:has(input:focus-visible) { outline: 2px solid #f5c542; outline-offset: 1px; }
+  .tv-any input[type="color"] { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; opacity: 0; cursor: pointer; }
+  .tv-checks label { color: #f3e9dc; display: flex; align-items: center; gap: 4px; }
+  .tv-actions { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; }
+  .tv-note { color: #b3a594; align-self: center; }
+
+  .sc-body { flex: 1; min-height: 0; overflow: auto; padding: 10px 12px 14px; display: grid; gap: 14px; align-content: start; }
+  .sc-body h3 { margin: 0 0 6px; font-size: 12px; color: #ffe9b8; text-transform: none; letter-spacing: normal; }
+  .sc-days { display: flex; gap: 4px; flex-wrap: wrap; }
+  .sc-day { position: relative; }
+  .sc-day input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+  .sc-day span {
+    display: inline-block; min-width: 38px; text-align: center; padding: 4px 6px; border-radius: 6px;
+    border: 1px solid #4a3a2c; background: #1b1511; color: #b3a594; font-weight: 600;
+  }
+  .sc-day input:checked + span { background: #c8962c; border-color: #c8962c; color: #2a1c05; }
+  .sc-day input:focus-visible + span { outline: 2px solid #f5c542; outline-offset: 1px; }
+  .sc-windows { display: grid; gap: 6px; }
+  .sc-window { display: flex; align-items: center; gap: 6px; }
+  .sc-window input[type="time"] {
+    background: #1b1511; color: #f3e9dc; border: 1px solid #4a3a2c; border-radius: 5px; padding: 3px 6px; font: inherit; color-scheme: dark;
+  }
+  .sc-window .sc-what { color: #b3a594; min-width: 64px; }
+  .sc-help { color: #b3a594; margin: 0; }
+  .sc-bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .sc-error { color: #ff9b8a; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Agent Watch</h1>
+    <p id="summary">Connecting…</p>
+    <button id="popout" type="button" hidden
+            title="Open the mine in a small always-on-top window that you can drag to a corner of the screen">Pop out</button>
+    <button id="schedule-btn" type="button" title="When it is day and night in the mine">☀ Day &amp; night</button>
+    <button id="alerts" type="button" aria-pressed="false" title="Chime and desktop notification when a session becomes ready">Alerts off</button>
+  </header>
+  <ul class="legend" aria-label="Pickaxe per model price"
+      title="Tier by Anthropic API list price per 1M input tokens. Fast mode counts at its higher price.">
+    <li data-tier="copper"><b>Copper</b> Haiku 5.5 · under $1</li>
+    <li data-tier="iron"><b>Iron</b> Sonnet, Haiku 4.5 · $1–4</li>
+    <li data-tier="gold"><b>Gold</b> Opus · $4–8</li>
+    <li data-tier="diamond"><b>Diamond</b> Fable, Mythos, fast Opus 5.5 · $8+</li>
+    <li data-tier="wood"><b>Wood</b> unknown model</li>
+  </ul>
+
+  <p id="popped" class="popped" hidden>
+    The mine is in the pop-out window. <button id="popin" type="button">Bring it back</button>
+  </p>
+  <div class="usage" id="usage" hidden></div>
+  <div id="mine" class="mine-wrap" role="img"
+       aria-label="Mine scene: each session is a dwarf digging its own tunnel; dwarves waiting on the surface need your input">
+    <canvas></canvas>
+    <div class="tip" hidden></div>
+  </div>
+
+  <div id="offline" role="alert" hidden>Lost contact with the local server. Start it with <code>node agent-watch/server.js</code>.</div>
+  <div id="server-error" role="alert" hidden>The server hit an error building the status. Its console has the details.</div>
+  <!-- announced to screen readers only when the list of sessions waiting on you changes -->
+  <p id="live" class="sr-only" aria-live="polite"></p>
+
+  <section id="ready">
+    <h2>Needs your input <span class="count">0</span></h2>
+    <p class="hint">No session has asked you anything.</p>
+    <div class="grid"></div>
+  </section>
+
+  <section id="busy">
+    <h2>Working <span class="count">0</span></h2>
+    <p class="hint">No sessions are working.</p>
+    <div class="grid"></div>
+  </section>
+
+  <section id="done">
+    <h2>Finished <span class="count">0</span></h2>
+    <p class="hint">No finished sessions. A session counts as finished when its last reply asked you nothing.</p>
+    <div class="grid"></div>
+  </section>
+</div>
+
+<template id="pick-icon-tpl">
+  <svg viewBox="0 0 20 20" aria-hidden="true">
+    <line x1="4" y1="17" x2="13" y2="7" stroke="#8b5a2b" stroke-width="2.4" stroke-linecap="round"/>
+    <path d="M4 5 Q12 1 18 9 Q12 6.5 4 5 Z" fill="var(--pick)" stroke="var(--pick-edge)" stroke-width="1" stroke-linejoin="round"/>
+  </svg>
+</template>
+
+<template id="card-tpl">
+  <article class="card">
+    <div class="top">
+      <div class="who"><h3 class="name"></h3><p class="cwd"></p><p class="miner"></p></div>
+      <button class="open-btn" type="button" hidden title="Open this session in the Claude app">Open in Claude</button>
+      <span class="pill"></span>
+    </div>
+    <p class="prompt" hidden><span class="prompt-text"></span></p>
+    <p class="doing"><span class="step"></span><span class="detail"></span><span class="age"></span></p>
+    <p class="quiet" hidden></p>
+    <ul class="crew" aria-label="Subagents"></ul>
+    <ol class="feed" aria-label="Recent tool calls"></ol>
+    <div class="stats"><span class="model"></span><div class="meter"><span></span></div><span class="tokens"></span></div>
+  </article>
+</template>
+
+<template id="crew-tpl">
+  <li><span class="cname"></span><span class="cstep"></span></li>
+</template>
+
+<template id="feed-tpl">
+  <li><span class="dot"></span><span class="ftool"></span><span class="fdetail"></span><span class="fage"></span></li>
+</template>
+
+<script src="/mine.js"></script>
+<script>
+'use strict';
+const $ = (sel, root = document) => root.querySelector(sel);
+const clone = (id) => $(id).content.firstElementChild.cloneNode(true);
+const set = (el, text) => { if (el.textContent !== text) el.textContent = text; };
+
+const fmtAge = (ms) => {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return s + 's';
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + 'm';
+  const h = Math.floor(m / 60);
+  if (h < 24) return h + 'h ' + (m % 60) + 'm';
+  return Math.floor(h / 24) + 'd ' + (h % 24) + 'h';
+};
+
+const fmtTokens = (n) => {
+  if (n >= 999500) return (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
+  if (n >= 1000) return Math.round(n / 1000) + 'k';
+  return String(n);
+};
+
+const stepOf = (a) => {
+  if (!a || !a.kind) return ['Working', ''];
+  if (a.kind === 'tool') return [a.tool || 'Tool', a.detail || ''];
+  return [a.kind === 'thinking' ? 'Thinking' : a.kind === 'compacting' ? 'Compacting the conversation' : 'Writing', ''];
+};
+
+// busy: working. ready: idle and its last reply asked you something. done: idle, nothing asked
+// (including a session with no transcript yet). mine.js uses the same rule.
+const stateOf = (s) => (s.status === 'busy' ? 'busy' : s.turn && s.turn.asked ? 'ready' : 'done');
+// The status timestamp resets when the app restarts a session, so idle time comes from the transcript.
+const sinceOf = (s) => (s.status !== 'busy' && s.turn && s.turn.at) || s.since;
+
+// --- cards (keyed, so animations are not restarted every second) ----------------
+
+const cards = new Map();   // session id -> <article>
+const lanes = { ready: $('#ready'), busy: $('#busy'), done: $('#done') };
+
+function syncRows(list, rowsById, items, make, fill) {
+  const rows = [];
+  const seen = new Set();
+  for (const item of items) {
+    seen.add(item.id);
+    let li = rowsById.get(item.id);
+    if (!li) { li = make(); rowsById.set(item.id, li); }
+    fill(li, item);
+    rows.push(li);
+  }
+  for (const [id, li] of rowsById) {
+    if (!seen.has(id)) { li.remove(); rowsById.delete(id); }
+  }
+  placeInOrder(list, rows);
+}
+
+function renderExtras(el, s, now, contextWindow) {
+  const prompt = $('.prompt', el);
+  prompt.hidden = !s.prompt;
+  set($('.prompt-text', el), s.prompt || '');
+  prompt.title = s.prompt || '';
+
+  syncRows($('.crew', el), el.crewRows, s.agents, () => {
+    const li = clone('#crew-tpl');
+    li.prepend(clone('#pick-icon-tpl'));
+    return li;
+  }, (li, a) => {
+    li.dataset.state = a.finished ? 'done' : 'running';
+    li.dataset.tier = (a.pricing && a.pricing.tier) || 'wood';
+    const [step, detail] = stepOf(a.activity);
+    set($('.cname', li), a.description || a.type);
+    set($('.cstep', li), a.finished ? 'done' : (detail ? `${step}: ${detail}` : step));
+    li.title = `${Mine.gnomeName(a.id)}, gnome · ${a.type} · ${a.model || 'model unknown'}`;
+  });
+
+  syncRows($('.feed', el), el.feedRows, s.feed || [], () => clone('#feed-tpl'), (li, call) => {
+    li.dataset.state = call.state;
+    set($('.ftool', li), call.tool);
+    set($('.fdetail', li), call.detail);
+    set($('.fage', li), call.at ? fmtAge(now - call.at) : '');
+    li.title = `${call.tool}${call.detail ? ': ' + call.detail : ''} (${call.state})`;
+  });
+
+  const t = s.tokens || { context: 0, output: 0 };
+  const share = Math.min(1, t.context / contextWindow);
+  const meter = $('.meter', el);
+  meter.firstElementChild.style.width = (share * 100).toFixed(1) + '%';
+  meter.dataset.level = share >= 0.8 ? 'high' : 'ok';
+  set($('.model', el), s.model || 'model unknown');
+  set($('.tokens', el), `${fmtTokens(t.context)} / ${fmtTokens(contextWindow)} · ${fmtTokens(t.output)} out`);
+  $('.stats', el).title =
+    `Context sent with the latest model call: ${t.context.toLocaleString()} tokens. ` +
+    `Output generated in this session: ${t.output.toLocaleString()} tokens. ` +
+    `The ${fmtTokens(contextWindow)} scale is an assumption; the real window is not recorded.`;
+}
+
+function renderCard(el, s, now, contextWindow) {
+  renderExtras(el, s, now, contextWindow);
+  const state = stateOf(s);
+  el.dataset.state = state;
+  $('.open-btn', el).hidden = !s.openable;
+  set($('.miner', el), '⛏ ' + (s.dwarf ? crewName(s.dwarf) + ' · level ' + s.dwarf.level : Mine.dwarfName(s.id))); // the session's dwarf in the mine
+  set($('.name', el), s.name);
+  const cwd = $('.cwd', el);
+  set(cwd, '‎' + s.cwd); // LRM keeps the path readable inside the rtl-ellipsis box
+  cwd.title = s.cwd;
+  set($('.pill', el), state === 'busy' ? 'Working' : state === 'done' ? 'Finished' : 'Needs your input');
+
+  const [step, detail] = state === 'ready' ? ['Asked you something', '']
+    : state === 'done' ? (s.turn ? ['Finished', 'last reply asked nothing'] : ['Idle', 'no messages yet'])
+    : stepOf(s.activity);
+  set($('.step', el), step);
+  const detailEl = $('.detail', el);
+  set(detailEl, detail);
+  detailEl.title = detail;
+  const since = sinceOf(s);
+  set($('.age', el), fmtAge(now - since));
+  $('.age', el).title = (state === 'busy' ? 'Working since ' : 'Idle since ') + new Date(since).toLocaleString();
+
+  const quiet = $('.quiet', el);
+  const silentFor = s.activity ? now - s.activity.at : 0;
+  const showQuiet = state === 'busy' && silentFor > 60000;
+  quiet.hidden = !showQuiet;
+  if (showQuiet) set(quiet, 'No transcript activity for ' + fmtAge(silentFor) + ' (long tool call, or a prompt waiting in the app)');
+}
+
+function placeInOrder(parent, wanted) {
+  wanted.forEach((el, i) => { if (parent.children[i] !== el) parent.insertBefore(el, parent.children[i] || null); });
+}
+
+const sessionsById = new Map(); // the latest data for each session, for click handlers
+
+function render(state) {
+  const now = Date.now();
+  sessionsById.clear();
+  for (const s of state.sessions) sessionsById.set(s.id, s);
+  const seen = new Set();
+  const groups = { ready: [], busy: [], done: [] };
+
+  for (const s of state.sessions) {
+    seen.add(s.id);
+    let el = cards.get(s.id);
+    if (!el) {
+      el = clone('#card-tpl');
+      el.feedRows = new Map();
+      el.crewRows = new Map();
+      const id = s.id;
+      $('.open-btn', el).addEventListener('click', () => openInClaude(id));
+      cards.set(s.id, el);
+    }
+    renderCard(el, s, now, state.contextWindow || 1000000);
+    groups[stateOf(s)].push({ s, el });
+  }
+  for (const [id, el] of cards) {
+    if (!seen.has(id)) { el.remove(); cards.delete(id); }
+  }
+
+  groups.ready.sort((a, b) => sinceOf(b.s) - sinceOf(a.s));   // most recent first
+  groups.done.sort((a, b) => sinceOf(b.s) - sinceOf(a.s));
+  groups.busy.sort((a, b) => a.s.startedAt - b.s.startedAt);
+  for (const key of ['ready', 'busy', 'done']) {
+    const lane = lanes[key];
+    placeInOrder($('.grid', lane), groups[key].map((g) => g.el));
+    set($('.count', lane), String(groups[key].length));
+    $('.hint', lane).hidden = groups[key].length > 0;
+  }
+
+  const nReady = groups.ready.length;
+  const nBusy = groups.busy.length;
+  const nWorkers = state.sessions.reduce((n, s) => n + s.agents.filter((a) => !a.finished).length, 0);
+  const summary = $('#summary');
+  if (!state.sessions.length) {
+    set(summary, 'No Claude sessions are running.');
+  } else {
+    summary.replaceChildren();
+    const b = document.createElement('b');
+    b.textContent = nReady + ' need' + (nReady === 1 ? 's' : '') + ' your input';
+    summary.append(b, ` · ${nBusy} working · ${groups.done.length} finished · ${nWorkers} subagent${nWorkers === 1 ? '' : 's'} digging`);
+  }
+  document.title = (nReady ? `(${nReady}) Needs input · ` : '') + 'Agent Watch';
+  renderOverlay(groups);
+  renderUsage(state.usage);
+  followHash();
+  set($('#live'), nReady ? 'Needs your input: ' + groups.ready.map((g) => g.s.name).join(', ') : 'Nothing needs your input');
+  setFavicon(nReady ? 'ready' : nBusy ? 'busy' : 'done');
+}
+
+let faviconTone = '';
+function setFavicon(tone) {
+  if (tone === faviconTone) return;
+  faviconTone = tone;
+  const colour = getComputedStyle(document.documentElement).getPropertyValue('--' + tone).trim();
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="${colour}"/></svg>`;
+  $('#favicon').href = 'data:image/svg+xml,' + encodeURIComponent(svg);
+}
+
+for (const li of document.querySelectorAll('.legend li')) li.prepend(clone('#pick-icon-tpl'));
+
+// --- overlays -------------------------------------------------------------------
+// Two ways to get a small always-on-top view of the mine:
+// - "Pop out": Chrome and Edge's Document Picture-in-Picture window. The mine moves into it with a
+//   one-line status bar; closing it moves the mine back. Chrome always shows the site address on top.
+// - The overlay app (agent-watch/overlay): a borderless WebView2 window that loads this page with
+//   ?overlay=1. The page then shows only the status bar and the mine, and talks to the app through
+//   window.chrome.webview: the bar is a drag region that moves the window, its buttons open the full
+//   page or close the overlay.
+
+const mineEl = $('#mine');
+const overlayMode = new URLSearchParams(location.search).has('overlay');
+const appHost = window.chrome && window.chrome.webview; // present only inside the overlay app
+// who this view is, when polling: the server picks one view (the overlay app first) to report the mining
+const VIEW_ID = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2)).slice(0, 36);
+let pip = null;          // the pop-out window while it is open
+let overlayBar = null;   // the status bar, in whichever document shows the overlay
+let overlayUsage = null; // the slim usage strip under it
+const USAGE_ROWS = [['fiveHour', '5-hour limit', '5h'], ['weekly', 'Weekly · all models', 'Week']];
+
+function makeOverlayBar(doc, buttons) {
+  const bar = doc.createElement('div');
+  bar.className = 'ov-bar';
+  for (const cls of ['ov-dot', 'ov-count', 'ov-names']) {
+    const span = doc.createElement('span');
+    span.className = cls;
+    bar.append(span);
+  }
+  for (const [label, title, onClick] of buttons) {
+    const b = doc.createElement('button');
+    b.type = 'button';
+    b.className = 'ov-btn';
+    b.textContent = label;
+    b.title = title;
+    b.setAttribute('aria-label', title);
+    b.addEventListener('click', onClick);
+    bar.append(b);
+  }
+  return bar;
+}
+
+// Opens the full page, from the overlay app or a plain ?overlay=1 tab, at a session (#s=<id>) or lane.
+function openFull(hash = '') {
+  if (appHost) appHost.postMessage({ type: 'open', hash });
+  else window.open('/' + hash, 'agent-watch');
+}
+
+if (overlayMode) {
+  document.body.className = 'overlay';
+  $('.wrap').hidden = true;
+  overlayBar = makeOverlayBar(document, appHost
+    ? [['☀', 'Day & night hours', () => openSchedule()], ['⤢', 'Open the full Agent Watch page', () => openFull()], ['✕', 'Close the overlay', () => appHost.postMessage({ type: 'close' })]]
+    : [['☀', 'Day & night hours', () => openSchedule()], ['⤢', 'Open the full Agent Watch page', () => openFull()]]);
+  mineEl.dataset.fit = 'both';
+  overlayUsage = makeOverlayUsage(document);
+  document.body.append(overlayBar, overlayUsage, mineEl);
+}
+
+if ('documentPictureInPicture' in window && !overlayMode) $('#popout').hidden = false;
+$('#popout').addEventListener('click', popOut);
+$('#popin').addEventListener('click', () => { if (pip) pip.close(); });
+
+async function popOut() {
+  if (pip) { pip.focus(); return; }
+  let win;
+  try {
+    win = await documentPictureInPicture.requestWindow({ width: 440, height: 340 });
+  } catch (err) {
+    console.error('Could not open the pop-out window:', err);
+    return;
+  }
+  pip = win;
+  for (const style of document.querySelectorAll('style')) win.document.head.append(style.cloneNode(true));
+  win.document.title = 'Agent Watch';
+  win.document.body.className = 'overlay';
+
+  overlayBar = makeOverlayBar(win.document, [['⤢', 'Show the full Agent Watch page', () => window.focus()]]);
+  overlayUsage = makeOverlayUsage(win.document);
+  win.document.body.append(overlayBar, overlayUsage, mineEl);
+  mineEl.dataset.fit = 'both';
+  $('#popped').hidden = false;
+  Mine.attach(mineEl, win);
+  restartPolling();
+
+  win.addEventListener('pagehide', () => {
+    pip = null;
+    overlayBar = null;
+    overlayUsage = null;
+    delete mineEl.dataset.fit;
+    $('#popped').after(mineEl);
+    $('#popped').hidden = true;
+    Mine.attach(mineEl, window);
+    restartPolling();
+  });
+}
+
+// --- plan usage ---------------------------------------------------------------------
+// The server's estimate of the Claude app's "Your usage limits" card: the 5-hour and weekly limits.
+
+function makeOverlayUsage(doc) {
+  const strip = doc.createElement('div');
+  strip.className = 'ov-usage';
+  strip.hidden = true;
+  for (const [key, , short] of USAGE_ROWS) {
+    const m = doc.createElement('div');
+    m.className = 'u-mini';
+    m.dataset.k = key;
+    const label = doc.createElement('span'); label.textContent = short;
+    const bar = doc.createElement('div'); bar.className = 'u-bar'; bar.append(doc.createElement('span'));
+    const pct = doc.createElement('span'); pct.className = 'u-pct';
+    m.append(label, bar, pct);
+    strip.append(m);
+  }
+  return strip;
+}
+
+const resetText = (iso, weekly) => {
+  if (!iso) return 'not started';
+  const d = new Date(iso);
+  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return 'Resets ' + (weekly ? d.toLocaleDateString([], { weekday: 'short' }) + ' ' + time : 'at ' + time);
+};
+const levelOf = (p) => (p >= 90 ? 'max' : p >= 70 ? 'high' : 'ok');
+
+function renderUsage(u) {
+  const box = $('#usage');
+  box.hidden = !u;
+  if (overlayUsage) overlayUsage.hidden = !u;
+  if (!u) return;
+  const note = `Estimated from this PC's Claude transcripts, calibrated against the Claude app at ${new Date(u.calibratedAt).toLocaleString()}. ` +
+    'Usage from other devices or claude.ai in a browser is not included; ask Claude to recalibrate if it drifts.';
+  if (!box.children.length) {
+    for (const [key, label] of USAGE_ROWS) {
+      const row = document.createElement('div');
+      row.className = 'u-row';
+      row.dataset.k = key;
+      row.innerHTML = '<span class="u-label"></span><span class="u-reset"></span><span class="u-pct"></span><div class="u-bar"><span></span></div>';
+      $('.u-label', row).textContent = label;
+      box.append(row);
+    }
+  }
+  box.title = note;
+  for (const [key, , short] of USAGE_ROWS) {
+    const w = u[key], pct = Math.max(0, w.percent), width = Math.min(100, pct) + '%';
+    const row = $(`.u-row[data-k="${key}"]`, box);
+    row.dataset.level = levelOf(pct);
+    set($('.u-reset', row), resetText(w.resetsAt, key === 'weekly'));
+    set($('.u-pct', row), '~' + pct + '%');
+    $('.u-bar span', row).style.width = width;
+    if (overlayUsage) {
+      const m = overlayUsage.querySelector(`[data-k="${key}"]`);
+      m.dataset.level = levelOf(pct);
+      set(m.querySelector('.u-pct'), '~' + pct + '%');
+      m.querySelector('.u-bar span').style.width = width;
+      m.title = `${short === '5h' ? '5-hour limit' : 'Weekly limit'}: about ${pct}% used. ${resetText(w.resetsAt, key === 'weekly')}.\n${note}`;
+    }
+  }
+}
+
+function renderOverlay(groups) {
+  if (!overlayBar) return;
+  const n = { ready: groups.ready.length, busy: groups.busy.length, done: groups.done.length };
+  const tone = n.ready ? 'ready' : n.busy ? 'busy' : 'done';
+  overlayBar.dataset.tone = tone;
+  const count = $('.ov-count', overlayBar), names = $('.ov-names', overlayBar);
+  set(count, n.ready ? `${n.ready} need${n.ready === 1 ? 's' : ''} you` : n.busy ? `${n.busy} working` : 'All finished');
+  set(names, (tone === 'done' ? [] : groups[tone]).map((g) => g.s.name).join(' · '));
+}
+
+function showCard(id) {
+  const card = cards.get(id);
+  if (!card) return false;
+  card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  card.classList.remove('flash');
+  void card.offsetWidth;
+  card.classList.add('flash');
+  // drop the highlight once it has played, so the ready pulse (same CSS property) can run again
+  clearTimeout(card.flashTimer);
+  card.flashTimer = setTimeout(() => card.classList.remove('flash'), 1300);
+  return true;
+}
+
+// Asks the server to open a session in the Claude desktop app (the server runs the claude:// link, so the
+// browser never shows its "open external app?" prompt). Only desktop-app sessions can be opened.
+function openInClaude(id) {
+  fetch('/api/open', { method: 'POST', headers: { 'X-Agent-Watch': '1' }, body: id })
+    .then((res) => { if (!res.ok) console.warn('Could not open the session in Claude:', res.status); })
+    .catch((err) => console.warn('Could not open the session in Claude:', err));
+}
+
+// Clicking a dwarf or a tunnel sign opens that session in Claude when it is a desktop-app session;
+// otherwise it shows the session's card (from an overlay: the full page at that card).
+Mine.init(mineEl, {
+  onSelect(id) {
+    const s = sessionsById.get(id);
+    if (s && s.openable) {
+      openInClaude(id);
+      if (!overlayMode) showCard(id);
+      return;
+    }
+    if (overlayMode) { openFull('#s=' + encodeURIComponent(id)); return; }
+    if (pip) window.focus();
+    showCard(id);
+  },
+  onLodge() { openCrew(); }, // the tavern: the whole crew
+  // ore: a lump landing in a cart, and a load tipped onto the store. Only the view the server picked to
+  // report calls these (see server.js); the server keeps the carts and the store.
+  onMine(session, tier, done) { postOre({ op: 'mine', session, tier, n: 1 }, done); },
+  onHaul(session, n, done) { postOre({ op: 'haul', session, n }, done); },
+});
+
+function postOre(body, done) {
+  fetch('/api/ore', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Agent-Watch': '1' }, body: JSON.stringify(body) })
+    .catch((err) => console.warn('Could not report the ore:', err))
+    .finally(done);
+}
+
+// --- the tavern: the whole crew -------------------------------------------------
+// Every dwarf the roster has hired, with its level, XP and work so far, what it is doing now, and a
+// Customise form to rename it and choose its looks (saved to the roster by the server). The panel lives
+// inside the mine element, so it opens over the scene wherever the scene is (page, overlay, pop-out).
+const crewPanel = (() => {
+  const el = document.createElement('section');
+  el.className = 'tavern';
+  el.hidden = true;
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-label', 'The crew');
+  el.innerHTML = '<div class="tv-head"><h2>🍺 The crew</h2><span class="tv-count"></span>' +
+    '<button type="button" class="tv-close" title="Back to the mine (Esc)" aria-label="Close">✕</button></div>' +
+    '<div class="tv-list"></div>';
+  $('.tv-close', el).addEventListener('click', () => closeCrew());
+  el.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    e.stopPropagation();
+    if (crewEditing) { crewEditing = null; loadCrew(); } else closeCrew();
+  });
+  mineEl.append(el);
+  return el;
+})();
+let crewTimer = 0, crewEditing = null, crewData = [];
+
+async function openCrew() {
+  if (!schedulePanel.hidden) closeSchedule(false);
+  crewPanel.hidden = false;
+  await loadCrew();
+  $('.tv-close', crewPanel).focus();
+  clearInterval(crewTimer);
+  crewTimer = setInterval(() => { if (!crewEditing && !crewPanel.hidden) loadCrew(); }, 5000);
+}
+function closeCrew() {
+  crewPanel.hidden = true;
+  crewEditing = null;
+  clearInterval(crewTimer);
+}
+async function loadCrew() {
+  try {
+    const res = await fetch('/api/roster', { cache: 'no-store' });
+    if (!res.ok) throw new Error(res.status);
+    crewData = (await res.json()).dwarves || [];
+  } catch {
+    $('.tv-list', crewPanel).innerHTML = '<p class="tv-empty">Could not reach the server.</p>';
+    return;
+  }
+  renderCrew();
+}
+
+// a dwarf's name: one you typed, else generated (from the die's seed if you rolled one, else its own)
+function crewName(d) { return crewNameParts(d).join(' '); }
+function crewNameParts(d) {
+  const [first, last] = Mine.dwarfName(d.nameSeed || d.id).split(' ');
+  return [d.firstName || first, d.lastName || last];
+}
+const plural = (n, word) => n.toLocaleString() + ' ' + word + (n === 1 ? '' : 's');
+
+function renderCrew() {
+  const list = $('.tv-list', crewPanel);
+  set($('.tv-count', crewPanel), crewData.length ? plural(crewData.length, 'dwarf').replace('dwarfs', 'dwarves') + ' hired' : '');
+  list.replaceChildren();
+  if (!crewData.length) { list.innerHTML = '<p class="tv-empty">No dwarves hired yet. They join as sessions start.</p>'; return; }
+  const now = Date.now();
+  for (const d of crewData) {
+    const row = document.createElement('article');
+    row.className = 'tv-dwarf';
+    const pic = document.createElement('canvas');
+    pic.className = 'tv-portrait';
+    Mine.portrait(pic, d, 3);
+    const info = document.createElement('div');
+    const span = Math.max(1, d.nextAt - d.levelAt), into = d.xp - d.levelAt;
+    info.innerHTML = '<div class="tv-name"><b></b><span class="tv-level"></span></div>' +
+      '<div class="tv-xp"><span></span></div><div class="tv-sub tv-xpline"></div>' +
+      '<div class="tv-sub tv-stats"></div><div class="tv-job"></div><div class="tv-sub tv-projects"></div>';
+    $('b', info).textContent = crewName(d);
+    $('.tv-level', info).textContent = 'Level ' + d.level;
+    $('.tv-xp span', info).style.width = Math.min(100, (into / span) * 100) + '%';
+    $('.tv-xp', info).title = `${into} of ${span} XP into level ${d.level}`;
+    $('.tv-xpline', info).textContent = `${(span - into).toLocaleString()} XP to level ${d.level + 1}`;
+    $('.tv-stats', info).textContent = [plural(d.xp, 'tool call'), plural(d.sessions, 'session'),
+      d.tokens ? fmtTokens(d.tokens) + ' tokens written' : ''].filter(Boolean).join(' · ');
+    const job = $('.tv-job', info);
+    if (d.working) {
+      job.dataset.busy = String(d.working.status === 'busy');
+      job.textContent = (d.working.status === 'busy' ? '⛏ Working on ' : '🍺 Resting after ') + '“' + d.working.name + '”';
+    } else {
+      job.className = 'tv-sub';
+      job.textContent = 'Free' + (d.lastWorked ? ' · last worked ' + fmtAge(now - d.lastWorked) + ' ago' : '') +
+        ' · hired ' + new Date(d.hiredAt).toLocaleDateString();
+    }
+    $('.tv-projects', info).textContent = d.projects.length
+      ? 'Projects: ' + d.projects.map((p) => p.name + (p.sessions > 1 ? ' ×' + p.sessions : '')).join(', ') : '';
+    const edit = document.createElement('button');
+    edit.type = 'button';
+    edit.className = 'tv-btn';
+    edit.textContent = 'Customise';
+    edit.addEventListener('click', () => { crewEditing = d.id; renderCrew(); });
+    row.append(pic, info, edit);
+    if (crewEditing === d.id) row.append(crewEditor(d, pic));
+    list.append(row);
+  }
+  const open = $('.tv-editor input', list);
+  if (open && document.activeElement !== open) open.focus();
+}
+
+// The Customise form: name, colours (a picker plus the generator's own swatches), beard style and the
+// small features, with a live preview. Only what differs from the generated dwarf is saved.
+function crewEditor(d, rowPic) {
+  const base = Mine.defaults(d.id), pal = Mine.palette;
+  const draft = { ...base, ...(d.look || {}) };
+  const refreshers = []; // each control puts itself back in line with the draft (after a dice roll)
+  const refresh = () => { for (const r of refreshers) r(); draw(); };
+  const roll = () => (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2));
+  const ed = document.createElement('form');
+  ed.className = 'tv-editor';
+  const preview = document.createElement('canvas');
+  preview.className = 'tv-preview';
+  const fields = document.createElement('div');
+  fields.className = 'tv-fields';
+  const draw = () => { const look = diff(); Mine.portrait(preview, { id: d.id, look }, 8); Mine.portrait(rowPic, { id: d.id, look }, 3); };
+  const diff = () => {
+    const out = {};
+    for (const k of Object.keys(base)) if (k !== 'name' && draft[k] !== base[k]) out[k] = draft[k];
+    return Object.keys(out).length ? out : null;
+  };
+  const field = (label, control, target) => {
+    const l = document.createElement('label');
+    l.textContent = label;
+    const id = 'tv-' + d.id + '-' + label.replace(/\W+/g, '-').toLowerCase();
+    (target || (control.matches('input, select') ? control : $('input', control))).id = id;
+    l.htmlFor = id;
+    fields.append(l, control);
+  };
+  const dice = (title, fn) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'tv-dice';
+    b.textContent = '🎲';
+    b.title = b.ariaLabel = title;
+    b.addEventListener('click', fn);
+    return b;
+  };
+
+  // first name and surname, each with a die that rolls a fresh one from the dwarf name generator; an
+  // empty field keeps the generated part (shown as the placeholder). The tag above the head shows the
+  // first name; everywhere else shows both.
+  const [genFirst, genLast] = base.name.split(' ');
+  const [nowFirst, nowLast] = crewNameParts(d);
+  const nameField = (label, value, generated, part) => {
+    const row = document.createElement('div');
+    row.className = 'tv-row';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.maxLength = 16;
+    input.value = value === generated ? '' : value;   // only show what differs from the generated name
+    input.placeholder = generated;
+    row.append(input, dice('Roll a new ' + label.toLowerCase(), () => {
+      input.value = Mine.dwarfName(roll()).split(' ')[part]; input.focus();
+    }));
+    field(label, row, input);
+    return input;
+  };
+  const firstInput = nameField('First name', nowFirst, genFirst, 0);
+  const lastInput = nameField('Surname', nowLast, genLast, 1);
+
+  // colours: the generator's swatches, then a picker for any colour at all
+  for (const [key, label] of [['skin', 'Skin'], ['beardColor', 'Beard'], ['helm', 'Helmet'], ['tunic', 'Tunic'], ['boots', 'Boots']]) {
+    const box = document.createElement('div');
+    box.className = 'tv-colour';
+    const swatches = pal[key].map((c) => {
+      const sw = document.createElement('button');
+      sw.type = 'button';
+      sw.className = 'tv-swatch';
+      sw.style.background = c;
+      sw.title = sw.ariaLabel = label + ' ' + c;
+      sw.addEventListener('click', () => { draft[key] = c; refresh(); });
+      box.append(sw);
+      return [sw, c];
+    });
+    const any = document.createElement('label');
+    any.className = 'tv-any';
+    any.title = 'Any colour…';
+    const pick = document.createElement('input');
+    pick.type = 'color';
+    pick.addEventListener('input', () => { draft[key] = pick.value; for (const r of refreshers) r(); draw(); });
+    pick.ariaLabel = label + ': any colour';
+    any.append(pick, '+');
+    box.append(any);
+    refreshers.push(() => {
+      const v = String(draft[key]).toLowerCase();
+      pick.value = v;
+      let matched = false;
+      for (const [sw, c] of swatches) { const on = c.toLowerCase() === v; sw.setAttribute('aria-pressed', String(on)); matched ||= on; }
+      any.dataset.on = String(!matched); // a colour of your own: the swatch shows it, outlined
+      any.style.background = matched ? '' : v;
+    });
+    field(label + ' colour', box, pick);
+  }
+
+  const style = document.createElement('select');
+  const STYLE_NAMES = { long: 'Long', short: 'Short', forked: 'Forked', braided: 'Braided', twin: 'Twin braids' };
+  for (const b of pal.beard) style.add(new Option(STYLE_NAMES[b] || b, b));
+  style.addEventListener('change', () => { draft.beard = style.value; draw(); });
+  refreshers.push(() => { style.value = draft.beard; });
+  field('Beard style', style);
+
+  const checks = document.createElement('div');
+  checks.className = 'tv-checks';
+  for (const [key, label] of [['bigNose', 'Big nose'], ['buckle', 'Belt buckle'], ['horn', 'Horned helmet']]) {
+    const l = document.createElement('label');
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.addEventListener('change', () => { draft[key] = box.checked; draw(); });
+    refreshers.push(() => { box.checked = !!draft[key]; });
+    l.append(box, ' ' + label);
+    checks.append(l);
+  }
+  const featLabel = document.createElement('span');
+  featLabel.textContent = 'Features';
+  featLabel.style.color = '#b3a594';
+  fields.append(featLabel, checks);
+
+  const actions = document.createElement('div');
+  actions.className = 'tv-actions';
+  const note = document.createElement('span');
+  note.className = 'tv-note';
+  const button = (text, cls, fn, title) => {
+    const b = document.createElement('button');
+    b.type = cls === 'primary' ? 'submit' : 'button';
+    b.className = 'tv-btn' + (cls ? ' ' + cls : '');
+    b.textContent = text;
+    if (title) b.title = title;
+    if (fn) b.addEventListener('click', fn);
+    actions.append(b);
+  };
+  const save = async (body) => {
+    note.textContent = 'Saving…';
+    try {
+      const res = await fetch('/api/dwarf', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Agent-Watch': '1' }, body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+    } catch (err) {
+      note.textContent = 'Could not save (' + err.message + ').';
+      return;
+    }
+    crewEditing = null;
+    await loadCrew();
+    restartPolling(); // the mine picks up the new name and looks straight away
+  };
+  button('Save', 'primary');
+  // a whole new look from the generator (skin, colours, beard, features); the name stays
+  button('🎲 Randomise looks', '', () => { const { name: _, ...look } = Mine.defaults(roll()); Object.assign(draft, look); refresh(); },
+    'Roll a completely new look; nothing is saved until you press Save');
+  button('Back to generated', '', () => save({ id: d.id, firstName: '', lastName: '', nameSeed: null, look: null }));
+  button('Cancel', '', () => { crewEditing = null; renderCrew(); });
+  actions.append(note);
+  ed.addEventListener('submit', (e) => {
+    e.preventDefault();
+    save({ id: d.id, firstName: firstInput.value, lastName: lastInput.value, look: diff() });
+  });
+  ed.append(preview, fields, actions);
+  refresh();
+  return ed;
+}
+
+// --- day & night hours ------------------------------------------------------------
+// Which days are work days and the daylight hours (one or more windows; gaps between them, like a lunch
+// break, are night). Saved by the server and sent with every poll, so the overlay and the page agree.
+// While the panel is open, changes show in the mine straight away; Cancel puts the saved ones back.
+let savedSchedule = null, scheduleKey = '', scheduleEditing = false;
+function applySchedule(sched) {
+  savedSchedule = sched || null;
+  if (scheduleEditing) return;
+  const key = JSON.stringify(savedSchedule);
+  if (key === scheduleKey) return;
+  scheduleKey = key;
+  Mine.setSchedule(savedSchedule || Mine.DEFAULT_SCHEDULE);
+}
+$('#schedule-btn').addEventListener('click', () => openSchedule());
+
+const schedulePanel = (() => {
+  const el = document.createElement('section');
+  el.className = 'tavern';
+  el.hidden = true;
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-label', 'Day and night');
+  el.innerHTML = '<div class="tv-head"><h2>☀ Day &amp; night</h2><span class="tv-count"></span>' +
+    '<button type="button" class="tv-close" title="Close without saving (Esc)" aria-label="Close">✕</button></div>' +
+    '<form class="sc-body"></form>';
+  $('.tv-close', el).addEventListener('click', () => closeSchedule(false));
+  el.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); closeSchedule(false); } });
+  mineEl.append(el);
+  return el;
+})();
+
+function closeSchedule(keep) {
+  schedulePanel.hidden = true;
+  scheduleEditing = false;
+  if (!keep) { scheduleKey = ''; applySchedule(savedSchedule); } // put the saved hours back in the mine
+}
+
+function openSchedule() {
+  closeCrew();
+  const cur = savedSchedule || Mine.DEFAULT_SCHEDULE;
+  const draft = { days: [...cur.days], windows: cur.windows.map((w) => [...w]) };
+  scheduleEditing = true;
+  const body = $('.sc-body', schedulePanel);
+  body.replaceChildren();
+  const DAY_NAMES = [[1, 'Mon'], [2, 'Tue'], [3, 'Wed'], [4, 'Thu'], [5, 'Fri'], [6, 'Sat'], [0, 'Sun']];
+  const mins = (hm) => Number(hm.slice(0, 2)) * 60 + Number(hm.slice(3));
+  const hm = (m) => String(Math.floor(m / 60) % 24).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+  const error = document.createElement('p');
+  error.className = 'sc-help sc-error';
+  // problems with the hours, or '' when they are fine
+  const check = () => {
+    const w = [...draft.windows].sort((a, b) => mins(a[0]) - mins(b[0]));
+    for (let i = 0; i < w.length; i++) {
+      if (!w[i][0] || !w[i][1]) return 'Fill in both times.';
+      if (mins(w[i][0]) >= mins(w[i][1])) return `${w[i][0]}–${w[i][1]}: the end must be after the start.`;
+      if (i && mins(w[i][0]) <= mins(w[i - 1][1])) return `${w[i - 1][0]}–${w[i - 1][1]} and ${w[i][0]}–${w[i][1]} overlap.`;
+    }
+    return '';
+  };
+  // show the draft in the mine right away, when it is valid
+  const preview = () => {
+    const problem = check();
+    error.textContent = problem;
+    save.disabled = !!problem;
+    if (!problem) Mine.setSchedule(draft);
+    set($('.tv-count', schedulePanel), draft.windows.length ? '' : 'always night');
+  };
+
+  const daysSec = document.createElement('div');
+  daysSec.innerHTML = '<h3>Work days</h3><div class="sc-days"></div>';
+  for (const [n, label] of DAY_NAMES) {
+    const l = document.createElement('label');
+    l.className = 'sc-day';
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = draft.days.includes(n);
+    box.ariaLabel = label;
+    box.addEventListener('change', () => {
+      draft.days = box.checked ? [...draft.days, n] : draft.days.filter((d) => d !== n);
+      preview();
+    });
+    const tag = document.createElement('span');
+    tag.textContent = label;
+    l.append(box, tag);
+    $('.sc-days', daysSec).append(l);
+  }
+
+  const hoursSec = document.createElement('div');
+  hoursSec.innerHTML = '<h3>Daylight hours</h3><div class="sc-windows"></div>';
+  const list = $('.sc-windows', hoursSec);
+  const drawWindows = () => {
+    list.replaceChildren();
+    draft.windows.forEach((w, i) => {
+      const row = document.createElement('div');
+      row.className = 'sc-window';
+      const what = document.createElement('span');
+      what.className = 'sc-what';
+      what.textContent = draft.windows.length === 1 ? 'Day' : i === 0 ? 'Morning' : i === draft.windows.length - 1 ? 'Afternoon' : 'Then';
+      const time = (k) => {
+        const t = document.createElement('input');
+        t.type = 'time';
+        t.value = w[k];
+        t.ariaLabel = what.textContent + (k ? ' ends' : ' starts');
+        t.addEventListener('input', () => { w[k] = t.value; preview(); });
+        return t;
+      };
+      const dash = document.createElement('span');
+      dash.textContent = '–';
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'tv-close';
+      del.textContent = '✕';
+      del.title = del.ariaLabel = 'Remove these hours';
+      del.addEventListener('click', () => { draft.windows.splice(i, 1); drawWindows(); preview(); });
+      row.append(what, time(0), dash, time(1), del);
+      list.append(row);
+    });
+  };
+  drawWindows();
+  const addBar = document.createElement('div');
+  addBar.className = 'sc-bar';
+  const small = (text, title, fn) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'tv-btn';
+    b.textContent = text;
+    b.title = title;
+    b.addEventListener('click', fn);
+    addBar.append(b);
+  };
+  small('+ Add hours', 'Another stretch of daylight, after the last one', () => {
+    const last = draft.windows[draft.windows.length - 1];
+    const from = last ? Math.min(mins(last[1]) + 30, 23 * 60) : 8 * 60;
+    draft.windows.push([hm(from), hm(Math.min(from + 120, 23 * 60 + 59))]);
+    drawWindows(); preview();
+  });
+  small('Always night', 'No daylight at all', () => { draft.windows = []; drawWindows(); preview(); });
+  small('Default', 'Mon–Fri, 08:00–12:00 and 12:30–16:15', () => {
+    draft.days = [...Mine.DEFAULT_SCHEDULE.days];
+    draft.windows = Mine.DEFAULT_SCHEDULE.windows.map((w) => [...w]);
+    daysSec.querySelectorAll('.sc-day input').forEach((box, i) => { box.checked = draft.days.includes(DAY_NAMES[i][0]); });
+    drawWindows(); preview();
+  });
+  hoursSec.append(addBar);
+
+  const help = document.createElement('p');
+  help.className = 'sc-help';
+  help.textContent = 'Outside these hours, in the gaps between them (like a lunch break) and on other days, it is night in the mine. ' +
+    'The sun rises over about 40 minutes around the first time and sets around the last; the gaps fade quickly.';
+
+  const actions = document.createElement('div');
+  actions.className = 'sc-bar';
+  const save = document.createElement('button');
+  save.type = 'submit';
+  save.className = 'tv-btn primary';
+  save.textContent = 'Save';
+  const cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.className = 'tv-btn';
+  cancel.textContent = 'Cancel';
+  cancel.addEventListener('click', () => closeSchedule(false));
+  const note = document.createElement('span');
+  note.className = 'sc-help';
+  actions.append(save, cancel, note);
+  body.onsubmit = async (e) => {
+    e.preventDefault();
+    if (check()) return;
+    note.textContent = 'Saving…';
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Agent-Watch': '1' },
+        body: JSON.stringify({ schedule: draft }),
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      savedSchedule = (await res.json()).schedule;
+    } catch (err) {
+      note.textContent = 'Could not save (' + err.message + ').';
+      return;
+    }
+    scheduleKey = '';
+    closeSchedule(true);
+    applySchedule(savedSchedule);
+    restartPolling();
+  };
+
+  body.append(daysSec, hoursSec, help, error, actions);
+  schedulePanel.hidden = false;
+  preview();
+  $('.sc-day input', daysSec).focus();
+}
+
+// Links from an overlay: #s=<session id> shows that card once it exists, #done the Finished lane.
+let pendingHash = location.hash;
+window.addEventListener('hashchange', () => { pendingHash = location.hash; followHash(); });
+function followHash() {
+  if (!pendingHash || overlayMode) return;
+  const m = /^#s=(.+)$/.exec(pendingHash);
+  if (pendingHash === '#done') $('#done').scrollIntoView({ block: 'start' });
+  else if (m && !showCard(decodeURIComponent(m[1]))) return; // card not drawn yet: try after the next poll
+  pendingHash = '';
+}
+
+// --- alerts -------------------------------------------------------------------
+
+const store = {
+  get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
+  set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } },
+};
+let alertsOn = store.get('agent-watch-alerts') === '1';
+let audio = null;
+const alertsBtn = $('#alerts');
+
+const soundReady = () => !!audio && audio.state === 'running';
+
+function paintAlerts() {
+  alertsBtn.setAttribute('aria-pressed', String(alertsOn));
+  // Browsers only allow sound after a click on the page, so after a reload "on" waits for one.
+  alertsBtn.textContent = !alertsOn ? 'Alerts off' : soundReady() ? 'Alerts on' : 'Alerts on · click page for sound';
+}
+
+function unlockSound() {
+  if (!alertsOn) return;
+  audio = audio || new AudioContext();
+  if (audio.state !== 'running') audio.resume().then(paintAlerts, () => {});
+}
+document.addEventListener('pointerdown', (e) => { if (e.target !== alertsBtn) unlockSound(); });
+document.addEventListener('keydown', (e) => { if (e.target !== alertsBtn) unlockSound(); });
+
+alertsBtn.addEventListener('click', () => {
+  alertsOn = !alertsOn;
+  store.set('agent-watch-alerts', alertsOn ? '1' : '0');
+  if (alertsOn) {
+    unlockSound();
+    if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
+    if (audio) audio.resume().then(() => { chime(); paintAlerts(); }, () => {});
+  }
+  paintAlerts();
+});
+paintAlerts();
+
+function chime() {
+  if (!audio || audio.state !== 'running') return; // browsers need one click on the page before sound
+  [660, 880].forEach((freq, i) => {
+    const osc = audio.createOscillator();
+    const gain = audio.createGain();
+    const t = audio.currentTime + i * 0.16;
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.15, t + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
+    osc.connect(gain).connect(audio.destination);
+    osc.start(t);
+    osc.stop(t + 0.5);
+  });
+}
+
+const lastStatus = new Map();
+function announce(state) {
+  const present = new Set(state.sessions.map((s) => s.id));
+  for (const id of lastStatus.keys()) if (!present.has(id)) lastStatus.delete(id);
+  for (const s of state.sessions) {
+    const was = lastStatus.get(s.id);
+    lastStatus.set(s.id, { status: s.status, compacting: !!(s.activity && s.activity.kind === 'compacting') });
+    // only a turn ending is news; a /compact finishing is not
+    if (!alertsOn || !was || was.status !== 'busy' || was.compacting || s.status === 'busy') continue;
+    chime();
+    if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+      new Notification(stateOf(s) === 'done' ? 'Finished' : 'Needs your input', { body: s.name, tag: s.id });
+    }
+  }
+}
+
+// --- polling ------------------------------------------------------------------
+
+// A session missing from one poll (its file was being rewritten, say) keeps its last state for a
+// few polls, so its card does not blink out and back.
+const GRACE_POLLS = 3;
+const known = new Map(); // id -> { s, miss }
+function withGrace(state) {
+  const present = new Set(state.sessions.map((s) => s.id));
+  for (const [id, e] of known) if (!present.has(id) && ++e.miss >= GRACE_POLLS) known.delete(id);
+  for (const s of state.sessions) known.set(s.id, { s, miss: 0 });
+  return { ...state, sessions: [...known.values()].map((e) => e.s) };
+}
+
+// One poll at a time: the next one is scheduled when this one is done, so slow replies never pile up.
+// Timers run on the pop-out window while it is open, because a hidden main tab gets throttled.
+let pollGen = 0;
+function schedulePoll(delay) {
+  const gen = pollGen;
+  (pip || window).setTimeout(() => { if (gen === pollGen) tick(gen); }, delay);
+}
+function restartPolling() {
+  pollGen++;
+  schedulePoll(0);
+}
+
+async function tick(gen) {
+  let state = null;
+  try {
+    const res = await fetch('/api/state?view=' + VIEW_ID + '&app=' + (appHost ? 1 : 0), { cache: 'no-store' });
+    $('#offline').hidden = true;
+    $('#server-error').hidden = res.ok;
+    if (res.ok) state = withGrace(await res.json());
+  } catch (err) {
+    $('#offline').hidden = false;
+    $('#server-error').hidden = true;
+  }
+  if (state) {
+    try {
+      announce(state);
+      render(state);
+      applySchedule(state.schedule);
+      Mine.sync(state);
+    } catch (err) {
+      console.error('Agent Watch could not draw this update:', err); // a page bug, not a lost server
+    }
+  }
+  if (gen === pollGen) schedulePoll(1000);
+}
+restartPolling();
+</script>
+</body>
+</html>
