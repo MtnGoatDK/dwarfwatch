@@ -1,4 +1,4 @@
-# Dwarfwatch
+<p align="center"><img src="assets/logo.png" alt="Dwarfwatch" width="664"></p>
 
 A little pixel-art dwarven mine that shows what your Claude Code sessions are doing.
 
