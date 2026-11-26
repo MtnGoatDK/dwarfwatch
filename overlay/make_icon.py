@@ -1,44 +1,69 @@
 """Builds icon.ico (and icon.png, a 256 px preview) for the Dwarfwatch overlay.
 
-The icon is a 16 x 16 pixel-art dwarf head in the mine's style: miner's helmet with a lamp, ginger
-beard. Each size in the .ico is that grid scaled up by a whole number, so the pixels stay crisp.
-No dependencies: PNG and ICO are written by hand.  Run:  python make_icon.py
+The icon is the lead dwarf from the mine (mine.js, BODY): head and shoulders, facing right, with the
+miner's helmet and its lamp and the big ginger beard, in the game's colours and with its dark outline,
+on a 16 x 16 grid. Each size in the .ico is that grid scaled up by a whole number, so the pixels stay
+crisp. No dependencies: PNG and ICO are written by hand.  Run:  python make_icon.py
 """
 import struct
 import zlib
 from pathlib import Path
 
-GRID = [
-    "......KKKK......",
-    "....KKhLLhKK....",
-    "...KhhhLLhhHK...",
-    "..KhHHHHHHHHHK..",
-    ".KDDDDDDDDDDDDK.",
-    ".KKSSSSSSSSSSKK.",
-    "..KSEESSSSEESK..",
-    "..KSSSSNNSSSSK..",
-    "..KBSSNNNNSSBK..",
-    ".KBBBwBNNBwBBBK.",
-    ".KBBwBBBBBBwBBK.",
-    ".KbBBBBwwBBBBbK.",
-    "..KbBBBBBBBBbK..",
-    "...KbBBBBBBbK...",
-    "....KKbBBbKK....",
-    "......KKKK......",
+# The dwarf's body rows from mine.js (helmet, face, beard, arms and the tunic hem); the legs are left
+# out, so it reads as a portrait.
+BODY = [
+    ".....qq...",
+    "...HhLlq..",
+    "..HHHYYH..",
+    "..HhhhhhH.",
+    "..BseseB..",
+    "..BBbubB..",
+    "..BbbBBbB.",
+    ".TTBbbbbT.",
+    "TtTBbbbbBT",
+    "TtTTBbbBtT",
+    "TSSTTBBTST",
+    ".TTkkkkkT.",
 ]
 
+
+def build_grid():
+    """BODY with a one-pixel dark outline, placed on a 16 x 16 grid."""
+    size, ox, oy = 16, 3, 2
+    grid = [["."] * size for _ in range(size)]
+    filled = lambda x, y: 0 <= y < len(BODY) and 0 <= x < len(BODY[y]) and BODY[y][x] != "."
+    for y in range(-1, len(BODY) + 1):
+        for x in range(-1, len(BODY[0]) + 1):
+            gx, gy = x + ox, y + oy
+            if not (0 <= gx < size and 0 <= gy < size):
+                continue
+            if filled(x, y):
+                grid[gy][gx] = BODY[y][x]
+            elif any(filled(x + a, y + b) for a, b in ((1, 0), (-1, 0), (0, 1), (0, -1))):
+                grid[gy][gx] = "K"
+    return ["".join(r) for r in grid]
+
+
+GRID = build_grid()
+
+# the game's default colours (a steel helmet, so it shows on a dark taskbar)
 PALETTE = {
-    "K": "#1b1410",  # outline
-    "h": "#b8bec7",  # helmet highlight
-    "H": "#8d939d",  # helmet
-    "D": "#5f646d",  # brim
-    "L": "#ffd75e",  # lamp
-    "S": "#f0c08a",  # skin
-    "E": "#2b1d14",  # eyes
-    "N": "#e1a067",  # nose
-    "B": "#b5652b",  # beard
-    "b": "#8a4a1d",  # beard shade
-    "w": "#d98a45",  # beard highlight
+    "K": "#140d09",  # outline
+    "H": "#58606c",  # helmet
+    "h": "#8a929e",  # helmet brim and highlight
+    "q": "#8a8d8f",  # lamp housing
+    "L": "#fdea46",  # lamp
+    "l": "#fcf59f",  # lamp glint
+    "Y": "#edbc36",  # lamp rim
+    "s": "#d5a076",  # skin
+    "S": "#bb8565",  # hands
+    "e": "#212b33",  # eyes
+    "u": "#d48e69",  # nose, a little redder than the skin
+    "b": "#c96e26",  # beard
+    "B": "#a1581e",  # beard shadow
+    "t": "#6a5f53",  # tunic
+    "T": "#49423a",  # tunic shadow
+    "k": "#6f6457",  # tunic hem
 }
 
 SIZES = [16, 32, 48, 64, 128, 256]
@@ -84,4 +109,5 @@ if __name__ == "__main__":
     images = [(s, png(s)) for s in SIZES]
     (here / "icon.ico").write_bytes(ico(images))
     (here / "icon.png").write_bytes(images[-1][1])
+    print("\n".join(GRID))
     print("wrote icon.ico (" + ", ".join(map(str, SIZES)) + " px) and icon.png")
