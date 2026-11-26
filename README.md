@@ -84,6 +84,13 @@ roster, the ore and your day-and-night hours, in `%LOCALAPPDATA%\Dwarfwatch\` (`
 elsewhere). It used to be called Agent Watch; data in an old `AgentWatch` folder is copied over on first
 start, and the old `AGENT_WATCH_*` settings below still work.
 
+### Re-recording the demo
+
+`tools/demo/` plays a scripted story (fake sessions, nothing of yours) on a virtual clock and records
+every frame: `python tools/demo/serve.py`, open <http://127.0.0.1:4790/?overlay=1#rec> at about
+480 × 680, wait for `tools/demo/done.txt` (around 30 seconds), then `python tools/demo/make_gif.py` to
+write `demo.gif` (needs Pillow).
+
 ### Settings
 
 | Variable | Default | |

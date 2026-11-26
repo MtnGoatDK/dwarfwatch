@@ -17,3 +17,7 @@ demo-hires/
 
 node_modules/
 *.tmp
+
+# demo recording output (tools/demo)
+tools/demo/frames/
+tools/demo/done.txt
