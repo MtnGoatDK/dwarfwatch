@@ -684,8 +684,9 @@
     if (G.shaftLevels) for (let y = GRASS; y <= LEVEL_TOP + (G.shaftLevels - 1) * LEVEL_STRIDE + 2; y++) w.set(G.SX, y, T.LADDER);
     for (const g of placed) { // parents before their subsessions, so a parent's length is known
       g.r0 = LEVEL_TOP + g.level * LEVEL_STRIDE;
-      // a subsession's entrance is its side shaft, a few tiles into the parent's gallery
-      g.ox = g.up ? g.up.ox + g.up.dir * Math.min(SIDE_SHAFT, g.up.len) : G.SX;
+      // a subsession's entrance is its side shaft, a few tiles into the top gallery of its family; deeper
+      // subsessions hang off that same shaft, so nesting never costs more width
+      g.ox = !g.up ? G.SX : g.up.up ? g.up.ox : g.up.ox + g.up.dir * Math.min(SIDE_SHAFT, g.up.len);
       g.max = Math.max(0, g.dir > 0 ? G.tilesX - 2 - g.ox : g.ox - 1);
       // g.dug remembers how far it was dug, so a narrower window only hides tunnel, never loses it
       if (g.dug == null) g.dug = targetOf(g);
