@@ -15,9 +15,9 @@
   const base = Date.now() - 3600e3;
 
   // the story's ore: carts per session and the surface store, as the server would keep them
-  const carts = { 'demo-a': 9, 'demo-b': 2, 'demo-c': 5, 'demo-d': 3 };
+  const carts = { 'demo-a': 9, 'demo-b': 2, 'demo-c': 5, 'demo-d': 3, 'demo-e': 4 };
   const store = { copper: 40, iron: 70, gold: 110, diamond: 25 };
-  const tierOf = { 'demo-a': 'diamond', 'demo-b': 'gold', 'demo-c': 'copper', 'demo-d': 'iron' };
+  const tierOf = { 'demo-a': 'diamond', 'demo-b': 'gold', 'demo-c': 'copper', 'demo-d': 'iron', 'demo-e': 'gold' };
 
   function session(id, name, model, extra) {
     return {
@@ -64,22 +64,31 @@
         [27, tool('Grep', 'PackageReference')]]),
       dwarf: dwarf('demo-d', 12),
     });
-    for (const s of [a, b, c, d]) s.cart = carts[s.id] || 0;
+    // Parser tests: a subsession the refactor started, in the gallery under it; its ore goes up the side shaft
+    const e = session('demo-e', 'Add tests for the new parser', 'claude-sonnet-5-5', {
+      parent: 'demo-a', toolCalls: 60 + Math.floor(t * 2),
+      activity: at(t, [[0, tool('Read', 'parser.ts')], [6, tool('Edit', 'parser.test.ts')], [12, tool('Bash', 'npm test')],
+        [18, tool('Edit', 'parser.test.ts')], [25, tool('Bash', 'npm test')]]),
+      dwarf: dwarf('demo-e', 5),
+    });
+    for (const s of [a, b, c, d, e]) s.cart = carts[s.id] || 0;
     return {
-      now: Date.now(), contextWindow: 1000000, sessions: [a, b, c, d], reporter: true, schedule: null, ore: { ...store },
+      now: Date.now(), contextWindow: 1000000, sessions: [a, b, c, d, e], reporter: true, schedule: null, ore: { ...store },
       usage: { estimated: true, plan: 'Team', calibratedAt: new Date().toISOString(),
         fiveHour: { percent: Math.round(34 + t * 0.5), resetsAt: new Date(Date.now() + 2.2 * 3600e3).toISOString() },
         weekly: { percent: 58, resetsAt: new Date(Date.now() + 30 * 3600e3).toISOString() } },
     };
   }
 
-  // the refactor's cart fills up early on, so the windlass has a full load to haul
-  let filled = false;
+  // the refactor's cart fills up early on, and the parser tests' a little later, so the windlass has full
+  // loads to haul, one of them up the side shaft
+  let filled = false, filledSub = false;
   const realFetch = window.fetch.bind(window);
   window.fetch = async (url, opts) => {
     const u = String(url);
     if (u.startsWith('/api/state')) {
       if (!filled && now() > 3) { carts['demo-a'] = 12; filled = true; }
+      if (!filledSub && now() > 12) { carts['demo-e'] = 12; filledSub = true; }
       return new Response(JSON.stringify(state(now())), { headers: { 'Content-Type': 'application/json' } });
     }
     if (u.startsWith('/api/ore')) { // mining and hauls, kept like the server does

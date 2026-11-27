@@ -580,6 +580,7 @@ function state(viewId, app) {
       console.warn(`skipped ${file}:`, err.message); // one odd session file must not take the others down
     }
   }
+  linkParents(sessions, now);
   for (const [file, t] of transcripts) if (now - t.used > CACHE_IDLE_MS) transcripts.delete(file);
   const live = new Set(sessions.map((x) => x.id));
   for (const id of transcriptPaths.keys()) if (!live.has(id)) transcriptPaths.delete(id);
@@ -623,6 +624,52 @@ function openInClaude(hostId) {
   }).unref();
 }
 
+// --- subsessions --------------------------------------------------------------
+// A desktop session can start another one (a "New task" card, a hand-off). The app records that in its own
+// metadata for the new session, Claude-Data\<install>\claude-code-sessions\<a>\<b>\local_<id>.json, as
+// spawnedFrom.sessionId: the parent's local_… id. That file is undocumented and has only been seen on
+// Windows, so an app update could move it; without it every session is simply its own tunnel.
+const APP_DATA = process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Claude-Data') : null;
+const APP_DIRS_RECHECK_MS = 60 * 1000;
+const appDirs = { list: [], at: 0 };
+const spawned = new Map(); // child local_… id -> { parent: local_… id or null, found, at }
+
+const subdirs = (dir) => {
+  try { return fs.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => path.join(dir, e.name)); }
+  catch { return []; }
+};
+function appSessionDirs(now) {
+  if (!APP_DATA || now - appDirs.at < APP_DIRS_RECHECK_MS) return appDirs.list;
+  appDirs.at = now;
+  appDirs.list = subdirs(APP_DATA).flatMap((install) => subdirs(path.join(install, 'claude-code-sessions')))
+    .flatMap(subdirs);
+  return appDirs.list;
+}
+function parentHostOf(hostId, now) {
+  const known = spawned.get(hostId);
+  if (known && (known.found || now - known.at < MISS_RETRY_MS)) return known.parent;
+  for (const dir of appSessionDirs(now)) {
+    const meta = readJson(path.join(dir, hostId + '.json'));
+    if (!meta) continue;
+    const from = meta.spawnedFrom && meta.spawnedFrom.sessionId;
+    const parent = HOST_ID.test(String(from)) && from !== hostId ? from : null;
+    spawned.set(hostId, { parent, found: true, at: now }); // set when the session is started, so kept for good
+    return parent;
+  }
+  spawned.set(hostId, { parent: null, found: false, at: now });
+  return null;
+}
+// Each session gets parent: the id of the running session that started it, or null.
+function linkParents(sessions, now) {
+  const byHost = new Map(sessions.filter((s) => s.hostId).map((s) => [s.hostId, s.id]));
+  for (const s of sessions) {
+    const parentHost = s.hostId ? parentHostOf(s.hostId, now) : null;
+    s.parent = (parentHost && byHost.get(parentHost)) || null;
+    delete s.hostId;
+  }
+  for (const id of spawned.keys()) if (!byHost.has(id)) spawned.delete(id);
+}
+
 // /compact (and other slash commands) write nothing to the transcript until they finish: the entries for a
 // manual compaction all land at once, about a minute later. So a session that turned busy after its last
 // reply ended, and has written nothing since, is working outside the conversation, almost always compacting.
@@ -645,6 +692,7 @@ function sessionEntry(file, now) {
       name: (typeof s.name === 'string' && s.name) || path.basename(cwd) || 'Session',
       cwd,
       openable: HOST_ID.test(String(s.hostSessionId)), // a desktop-app session that "Open in Claude" can reach
+      hostId: HOST_ID.test(String(s.hostSessionId)) ? s.hostSessionId : null, // replaced by parent in linkParents
       status: s.status || 'unknown',
       since: s.statusUpdatedAt || s.updatedAt || s.startedAt || now,
       startedAt: s.startedAt || 0,

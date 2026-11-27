@@ -8,7 +8,9 @@
 // the shaft, alternating left and right, two per level. Its lead dwarf digs the gallery face
 // (its length is a log scale of the session's tool calls), its subagents break boulders
 // behind it, and ore flies into the gallery's cart. When a session needs input, its lead climbs
-// out and waits on the surface.
+// out and waits on the surface. A subsession (a session started by another running session) does
+// not open onto the main shaft: its gallery hangs below its parent's, on the same side, reached by
+// a side shaft with a ladder down from the parent's gallery.
 
 (() => {
   // ---- constants ----------------------------------------------------------------------
@@ -27,6 +29,7 @@
   const CART_FULL = 12;          // lumps in a full cart: then the windlass hauls it up to the ore store
   const GNOME_SPACE = 2 * TILE; // px between gnomes when the tunnel has room (a gnome is 8 wide)
   const CALLS_FULL = 1500;      // tool calls at which a tunnel reaches the edge of the scene
+  const SIDE_SHAFT = 3;         // tiles from a gallery's entrance to the side shaft down to its subsessions
 
   const T = { SKY: 0, GRASS: 1, DIRT: 2, ROCK: 3, TUNNEL: 4, LADDER: 5 };
   const TIERS = {
@@ -506,7 +509,7 @@
   }
 
   function breakFace(g, d) {
-    const x = G.SX + g.dir * (g.len + 1);
+    const x = g.ox + g.dir * (g.len + 1);
     for (let y = g.r0; y < g.r0 + 3; y++) G.world.set(x, y, T.TUNNEL);
     for (let xx = x - 1; xx <= x + 1; xx++) for (let y = g.r0 - 1; y <= g.r0 + 3; y++) drawTile(xx, y);
     g.len++; g.dmg = 0;
@@ -517,7 +520,7 @@
     plan();
   }
 
-  const cartPos = (g) => [(G.SX + g.dir * 2) * TILE + TILE / 2, (g.r0 + 3) * TILE - 7];
+  const cartPos = (g) => [(g.ox + g.dir * 2) * TILE + TILE / 2, (g.r0 + 3) * TILE - 7];
 
   function gemTo(g, x, y, tier) {
     const [cx, cy] = cartPos(g);
@@ -599,7 +602,7 @@
         const st = stateOf(s);
         if (st === 'ready') lead.setGoal(slots[ready.indexOf(s)], GRASS - 1, 'wait', 1, snap);
         else if (st === 'done') lead.setGoal(...door(), 'rest', 1, snap);
-        else lead.setGoal(G.SX + g.dir * g.len, g.r0 + 2, actOf(s.activity), g.dir, snap);
+        else lead.setGoal(g.ox + g.dir * g.len, g.r0 + 2, actOf(s.activity), g.dir, snap);
         lead.fresh = false;
       }
       const crew = [];
@@ -628,7 +631,7 @@
         const at = Math.max(far - space * k, near);
         const tile = Math.max(0, Math.round(at / TILE));
         Object.assign(d, { space, nudge: g.dir * (at - tile * TILE), stagger: space < GNOME_SPACE && k % 2 === 1 });
-        d.setGoal(G.SX + g.dir * tile, g.r0 + 2, actOf(a.activity), g.dir, snap);
+        d.setGoal(g.ox + g.dir * tile, g.r0 + 2, actOf(a.activity), g.dir, snap);
       });
     }
   }
@@ -655,7 +658,9 @@
     const fit = !!G.root.dataset.fit;
     const ch = G.root.clientHeight || 300;
     const gals = G.order.map((id) => G.galleries.get(id));
-    const levels = Math.ceil(gals.length / 2);
+    const placed = layOut(gals);
+    const levels = placed.reduce((n, g) => Math.max(n, g.level + 1), 0);
+    G.shaftLevels = placed.reduce((n, g) => (g.up ? n : Math.max(n, g.level + 1)), 0);
     const needRows = LEVEL_TOP + levels * LEVEL_STRIDE;
     if (fit) {
       // overlay: the biggest pixel scale at which every tunnel fits the window...
@@ -675,21 +680,25 @@
         w.set(x, y, y < GRASS ? T.SKY : y === GRASS ? T.GRASS : y <= GRASS + 2 ? T.DIRT : T.ROCK);
       }
     }
-    if (levels) for (let y = GRASS; y <= LEVEL_TOP + (levels - 1) * LEVEL_STRIDE + 2; y++) w.set(G.SX, y, T.LADDER);
-    gals.forEach((g, i) => {
-      g.level = Math.floor(i / 2);
-      g.dir = i % 2 === 0 ? 1 : -1;
+    // the main shaft goes down to the deepest gallery that opens onto it
+    if (G.shaftLevels) for (let y = GRASS; y <= LEVEL_TOP + (G.shaftLevels - 1) * LEVEL_STRIDE + 2; y++) w.set(G.SX, y, T.LADDER);
+    for (const g of placed) { // parents before their subsessions, so a parent's length is known
       g.r0 = LEVEL_TOP + g.level * LEVEL_STRIDE;
-      g.max = g.dir > 0 ? G.tilesX - 2 - G.SX : G.SX - 1;
+      // a subsession's entrance is its side shaft, a few tiles into the parent's gallery
+      g.ox = g.up ? g.up.ox + g.up.dir * Math.min(SIDE_SHAFT, g.up.len) : G.SX;
+      g.max = Math.max(0, g.dir > 0 ? G.tilesX - 2 - g.ox : g.ox - 1);
       // g.dug remembers how far it was dug, so a narrower window only hides tunnel, never loses it
       if (g.dug == null) g.dug = targetOf(g);
       g.len = Math.max(Math.min(g.dug, g.max), Math.min(MIN_LEN, g.max));
+      const i = G.order.indexOf(g.id);
       for (let j = 1; j <= g.max; j++) {
-        const x = G.SX + g.dir * j;
+        const x = g.ox + g.dir * j;
         for (let y = g.r0 - 1; y <= g.r0 + 3; y++) if (w.in(x, y)) w.owner[y * w.w + x] = i;
         if (j <= g.len) for (let y = g.r0; y < g.r0 + 3; y++) w.set(x, y, T.TUNNEL);
       }
-    });
+      // the side shaft: from just under the parent's sign down to this gallery's floor
+      if (g.up) for (let y = g.up.r0 + 1; y <= g.r0 + 2; y++) w.set(g.ox, y, T.LADDER);
+    }
     G.world = w;
     sizeCanvas();
     drawSky();
@@ -718,6 +727,51 @@
       if (w.standable(d.tx, d.ty)) { d.place(d.tx, d.ty); d.goal = [d.tx, d.ty]; }
       else d.place(...door());
     }
+  }
+
+  // Which side and level each gallery gets. A family (a session and the subsessions it started, and
+  // theirs) keeps to one side, stacked: the session first, then each subsession under it, depth first,
+  // oldest first. A family keeps the side it was given, so a new subsession pushes the galleries below
+  // it on that side down a level and nothing ever changes sides; only a new family picks a side: the
+  // one with fewer levels, the right on a tie (so plain sessions alternate right and left). Sets g.dir,
+  // g.level and g.up (the parent's gallery, or null); returns the galleries in that order.
+  function layOut(gals) {
+    const byId = new Map(gals.map((g) => [g.id, g]));
+    const parentOf = (g) => {
+      const p = g.parent && g.parent !== g.id ? byId.get(g.parent) : null;
+      if (!p) return null;
+      for (let q = p, n = 0; q; q = q.parent && byId.get(q.parent), n++) if (q === g || n > gals.length) return null; // a loop
+      return p;
+    };
+    const kids = new Map();
+    for (const g of gals) {
+      g.up = parentOf(g);
+      if (g.up) kids.set(g.up.id, [...(kids.get(g.up.id) || []), g]);
+    }
+    const used = { 1: 0, '-1': 0 }, out = [];
+    const place = (g, dir) => {
+      g.dir = dir; g.level = used[dir]++; out.push(g);
+      for (const k of kids.get(g.id) || []) place(k, dir);
+    };
+    // families that already have a side first, so a new family sees how deep each side really is
+    const roots = gals.filter((g) => !g.up), sided = (g) => g.dir === 1 || g.dir === -1;
+    for (const g of roots) if (sided(g)) place(g, g.dir);
+    for (const g of roots) if (!sided(g)) place(g, used[1] <= used[-1] ? 1 : -1);
+    return out.sort((a, b) => a.dir - b.dir || a.level - b.level); // parents before their subsessions
+  }
+
+  // The way ore goes from a gallery's cart to the main shaft: for a subsession, along its floor to its
+  // side shaft and up into the parent's gallery, and so on up to the gallery that opens onto the shaft.
+  // Returns the points after the cart (ending at the shaft) and that top gallery.
+  function routeUp(g) {
+    const pts = [];
+    let cur = g;
+    while (cur.up) {
+      const x = cur.ox * TILE + TILE / 2;
+      pts.push([x, (cur.r0 + 3) * TILE - 6], [x, (cur.up.r0 + 3) * TILE - 6]);
+      cur = cur.up;
+    }
+    return { pts, top: cur };
   }
 
   function sizeCanvas() {
@@ -1450,7 +1504,8 @@
       if (!g) return;
       H = G.haul = { g, phase: 'down', y: b + BUCKET_REST, load: [], waiting: 0 };
     }
-    const g = H.g, bottom = (g.r0 + 3) * TILE - 6;
+    // a subsession's ore climbs its side shafts to the gallery on the main shaft; the bucket meets it there
+    const g = H.g, route = routeUp(g), bottom = (route.top.r0 + 3) * TILE - 6;
     if (H.phase === 'down') {
       H.y = Math.min(bottom, H.y + BUCKET_SPEED * dt);
       if (H.y < bottom) return;
@@ -1459,13 +1514,14 @@
       const n = Math.min(CART_FULL, g.gems);
       g.gems -= n; g.hauling = (g.hauling || 0) + n; // still in the server's cart until it is tipped
       H.tier = g.tier || 'wood'; H.n = n;
+      H.limit = 3;
       for (let i = 0; i < n; i++) {
-        G.gems.push({ x0: cx + (i % 4) - 2, y0: cy - 1, x1: bucketX() + (i % 3) - 1, y1: bottom, t: -i * 0.04, dur: 0.45,
-          color: TIERS[H.tier][i % 3 ? 0 : 1], done: () => H.load.push(i % 3 ? 0 : 1) });
+        const pts = [[cx + (i % 4) - 2, cy - 1], ...route.pts, [bucketX() + (i % 3) - 1, bottom]];
+        H.limit = Math.max(H.limit, 3 + flyAlong(pts, TIERS[H.tier][i % 3 ? 0 : 1], i * 0.018, () => H.load.push(i % 3 ? 0 : 1)));
       }
       H.phase = 'load';
     } else if (H.phase === 'load') {
-      if (H.load.length >= H.n || (H.waiting += dt) > 3) H.phase = 'up';
+      if (H.load.length >= H.n || (H.waiting += dt) > H.limit) H.phase = 'up';
     } else if (H.phase === 'up') {
       H.y = Math.max(b + BUCKET_REST, H.y - BUCKET_SPEED * dt);
       if (H.y > b + BUCKET_REST) return;
@@ -1480,6 +1536,22 @@
       H.load = [];
       H.phase = 'tip';
     }
+  }
+  // A lump of ore hopping from point to point (the cart, the foot and top of each side shaft, the bucket):
+  // one hop straight to the bucket from a gallery on the main shaft, small hops up the ladders otherwise.
+  // Returns the seconds the whole way takes.
+  function flyAlong(pts, color, wait, done) {
+    const hops = pts.length - 1;
+    const durOf = (a, b) => (hops === 1 ? 0.45 : Math.max(0.15, Math.hypot(b[0] - a[0], b[1] - a[1]) / 110));
+    const hop = (k, delay) => {
+      const [a, b] = [pts[k], pts[k + 1]], dur = durOf(a, b);
+      G.gems.push({ x0: a[0], y0: a[1], x1: b[0], y1: b[1], t: -delay / dur, dur, color, arc: hops === 1 ? 14 : 4,
+        done: k + 1 < hops ? () => hop(k + 1, 0) : done });
+    };
+    hop(0, wait);
+    let total = wait;
+    for (let k = 0; k < hops; k++) total += durOf(pts[k], pts[k + 1]);
+    return total;
   }
   function deposit(H) {
     const g = H.g;
@@ -1518,10 +1590,10 @@
   }
 
   function drawGallery(c, g, lights) {
-    const ex = (G.SX + g.dir) * TILE, top = g.r0 * TILE, floor = (g.r0 + 3) * TILE;
+    const ex = (g.ox + g.dir) * TILE, top = g.r0 * TILE, floor = (g.r0 + 3) * TILE;
     // support frames every few tiles
     for (let j = 1; j <= g.len; j += 5) {
-      const fx = (G.SX + g.dir * j) * TILE + (g.dir > 0 ? 0 : TILE - 2);
+      const fx = (g.ox + g.dir * j) * TILE + (g.dir > 0 ? 0 : TILE - 2);
       c.fillStyle = '#5a3d27';
       c.fillRect(fx, top, 2, floor - top);
       c.fillStyle = '#6b4a2f';
@@ -1545,7 +1617,7 @@
     }
     // cracks in the face
     if (g.dmg > 0 && g.len < g.max) {
-      const fx = (G.SX + g.dir * (g.len + 1)) * TILE;
+      const fx = (g.ox + g.dir * (g.len + 1)) * TILE;
       c.fillStyle = '#1b1715';
       for (let y = g.r0; y < g.r0 + 3; y++) {
         CRACKS.slice(0, g.dmg * 3).forEach(([px, py]) => c.fillRect(fx + (g.dir > 0 ? px : TILE - 1 - px), y * TILE + py, 1, 1));
@@ -1679,8 +1751,7 @@
 
   // How far daylight reaches down the shaft: to its bottom, at most 110 px.
   function shaftLight(groundY) {
-    const levels = Math.ceil(G.order.length / 2);
-    const bottom = (LEVEL_TOP + (levels - 1) * LEVEL_STRIDE + 3) * TILE;
+    const bottom = (LEVEL_TOP + ((G.shaftLevels || 1) - 1) * LEVEL_STRIDE + 3) * TILE;
     return Math.max(0, Math.min(110, bottom - groundY));
   }
 
@@ -1750,12 +1821,14 @@
       }
       return true;
     });
+    const landed = [];
     G.gems = G.gems.filter((m) => {
       m.t += dt / m.dur;
       if (m.t < 1) return true;
-      if (m.done) m.done(); else landInCart(m.g);
+      landed.push(m);
       return false;
     });
+    for (const m of landed) if (m.done) m.done(); else landInCart(m.g); // after: a done may start the next hop
     updateHaul(dt);
     for (const cl of G.clouds) {
       if (!reduceMotion.matches) cl.x += cl.v * dt;
@@ -1850,7 +1923,7 @@
     }
     for (const m of G.gems) {
       if (m.t < 0) continue; // a lump waiting its turn to fly
-      const t = m.t, mx = m.x0 + (m.x1 - m.x0) * t, my = m.y0 + (m.y1 - m.y0) * t - Math.sin(t * Math.PI) * 14;
+      const t = m.t, mx = m.x0 + (m.x1 - m.x0) * t, my = m.y0 + (m.y1 - m.y0) * t - Math.sin(t * Math.PI) * (m.arc ?? 14);
       c.fillStyle = m.color;
       c.fillRect(Math.round(mx), Math.round(my), 2, 2);
       lights.push({ x: mx, y: my, r: 6 });
@@ -1902,7 +1975,7 @@
       const maxW = Math.max(40, (g.max - 2) * TILE * S);
       const label = fit(c, g.name, maxW - 22 - pctW);
       const w = c.measureText(label).width + 22 + pctW, h = tiny ? 13 : 18;
-      const x = g.dir > 0 ? (G.SX + 1.6) * TILE * S : (G.SX - 0.6) * TILE * S - w;
+      const x = g.dir > 0 ? (g.ox + 1.6) * TILE * S : (g.ox - 0.6) * TILE * S - w;
       const y = g.r0 * TILE * S + (tiny ? 1 : 4);
       c.fillStyle = '#5a3d27';
       roundRect(c, x, y, w, h, 3); c.fill();
@@ -2115,9 +2188,10 @@
       g.tier = tier;
       g.name = s.name;
       g.state = stateOf(s);
+      g.parent = s.parent || null; // the session that started this one, if it is running (see layOut)
     }
     for (const id of [...G.galleries.keys()]) if (!ids.includes(id)) G.galleries.delete(id);
-    const key = ids.join(',');
+    const key = sessions.map((s) => s.id + (s.parent ? '<' + s.parent : '')).join(',');
     if (key !== G.layoutKey) { G.order = ids; G.layoutKey = key; rebuild(); }
     else if (G.tilesDirty) drawAllTiles();
     G.tilesDirty = false;

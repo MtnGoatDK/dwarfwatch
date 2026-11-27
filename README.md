@@ -15,6 +15,9 @@ for you (their dwarf climbs up to the surface with a green "!").
   spyglass for web and browser tools, a wave when it calls in subagents, a pickaxe for everything else.
 - **Subagents as gnomes,** dressed by type: explorers dig, general-purpose helpers carry a lantern,
   planners carry a sack.
+- **Subsessions in side shafts.** A session started by another running session (a "New task" in the
+  desktop app) gets its gallery under its parent's, reached by its own ladder down from the parent's
+  gallery; its ore climbs that ladder to the windlass.
 - **The model by its pickaxe:** wood, copper, iron, gold or diamond, by the model's price.
 - **Context** per session on its tunnel sign: how full the context window is, with a coloured bar.
 - **Plan usage:** an estimate of your 5-hour and weekly limits (see below).
@@ -73,7 +76,11 @@ Drag it by its top bar; hold **Alt** while dragging to place it without snapping
 - `~/.claude/sessions/*.json`, the running sessions and whether each is busy or idle;
 - each session's transcript (`~/.claude/projects/...jsonl`), read incrementally, for the model, tool
   calls, tokens, the last prompt and whether the last reply asked you something;
-- the subagent transcripts next to it, for the gnomes.
+- the subagent transcripts next to it, for the gnomes;
+- the Claude desktop app's own metadata for each session
+  (`%LOCALAPPDATA%\Claude-Data\…\claude-code-sessions\…\local_….json`), only for which session started
+  which (`spawnedFrom`). That file is not documented and has only been seen on Windows; without it
+  every session is simply its own gallery off the main shaft.
 
 It serves the page and a small JSON API on `127.0.0.1` only. `mine.js` is the canvas engine that draws
 the mine; `index.html` is the page and the overlay's UI.
