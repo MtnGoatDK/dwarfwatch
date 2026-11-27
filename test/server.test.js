@@ -372,6 +372,12 @@ test('http: guards, the page and the state of a live session', async () => {
   fs.writeFileSync(path.join(CLAUDE, 'sessions', process.pid + '.json'), JSON.stringify({
     pid: process.pid, sessionId: 'live-1', cwd, status: 'busy', startedAt: 1, hostSessionId: 'local_abc-123',
   }));
+  // the desktop app's metadata for it, with its pull requests
+  const meta = path.join(process.env.LOCALAPPDATA, 'Claude-Data', 'install', 'claude-code-sessions', 'a', 'b');
+  fs.mkdirSync(meta, { recursive: true });
+  fs.writeFileSync(path.join(meta, 'local_abc-123.json'), JSON.stringify({
+    sessionId: 'local_abc-123', prs: [{ prNumber: 1, state: 'MERGED' }, { prNumber: 2, state: 'OPEN' }, { prNumber: 3, state: 'OPEN' }],
+  }));
   const folder = path.join(CLAUDE, 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'));
   fs.mkdirSync(folder, { recursive: true });
   fs.writeFileSync(path.join(folder, 'live-1.jsonl'), jsonl([
@@ -402,6 +408,7 @@ test('http: guards, the page and the state of a live session', async () => {
     assert.equal(s.name, 'proj');
     assert.equal(s.openable, true);
     assert.equal(s.parent, null);
+    assert.deepEqual(s.prs, { count: 3, open: 2, merged: 1 });
     assert.equal(s.prompt, 'make it so');
     assert.equal(s.toolCalls, 1);
     assert.deepEqual(s.feed.map((f) => f.detail), ['a.js']);

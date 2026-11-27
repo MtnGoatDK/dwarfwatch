@@ -587,7 +587,7 @@ function state(viewId, app) {
       console.warn(`skipped ${file}:`, err.message); // one odd session file must not take the others down
     }
   }
-  linkParents(sessions, now);
+  addAppMeta(sessions, now);
   for (const [file, t] of transcripts) if (now - t.used > CACHE_IDLE_MS) transcripts.delete(file);
   const live = new Set(sessions.map((x) => x.id));
   for (const id of transcriptPaths.keys()) if (!live.has(id)) transcriptPaths.delete(id);
@@ -636,10 +636,13 @@ function openInClaude(hostId) {
 // metadata for the new session, Claude-Data\<install>\claude-code-sessions\<a>\<b>\local_<id>.json, as
 // spawnedFrom.sessionId: the parent's local_… id. That file is undocumented and has only been seen on
 // Windows, so an app update could move it; without it every session is simply its own tunnel.
+// The same file lists the session's pull requests (prs: [{ prNumber, state: 'OPEN' | 'MERGED' | … }]),
+// which the app keeps up to date, so it is re-read when it changes.
 const APP_DATA = process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Claude-Data') : null;
 const APP_DIRS_RECHECK_MS = 60 * 1000;
+const APP_META_RECHECK_MS = 5 * 1000;
 const appDirs = { list: [], at: 0 };
-const spawned = new Map(); // child local_… id -> { parent: local_… id or null, found, at }
+const appMeta = new Map(); // local_… id -> { file, mtimeMs, checked, parent, prs }
 
 const subdirs = (dir) => {
   try { return fs.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => path.join(dir, e.name)); }
@@ -652,29 +655,46 @@ function appSessionDirs(now) {
     .flatMap(subdirs);
   return appDirs.list;
 }
-function parentHostOf(hostId, now) {
-  const known = spawned.get(hostId);
-  if (known && (known.found || now - known.at < MISS_RETRY_MS)) return known.parent;
-  for (const dir of appSessionDirs(now)) {
-    const meta = readJson(path.join(dir, hostId + '.json'));
-    if (!meta) continue;
-    const from = meta.spawnedFrom && meta.spawnedFrom.sessionId;
-    const parent = HOST_ID.test(String(from)) && from !== hostId ? from : null;
-    spawned.set(hostId, { parent, found: true, at: now }); // set when the session is started, so kept for good
-    return parent;
-  }
-  spawned.set(hostId, { parent: null, found: false, at: now });
-  return null;
+const mtimeOf = (file) => { try { return fs.statSync(file).mtimeMs; } catch { return null; } };
+// how many pull requests the session has, and how many are open or merged (the app shows the count,
+// green while any is open, purple once all are merged)
+function prSummary(prs) {
+  if (!Array.isArray(prs) || !prs.length) return null;
+  const count = (state) => prs.filter((p) => p && p.state === state).length;
+  return { count: prs.length, open: count('OPEN'), merged: count('MERGED') };
 }
-// Each session gets parent: the id of the running session that started it, or null.
-function linkParents(sessions, now) {
+function appMetaOf(hostId, now) {
+  let m = appMeta.get(hostId);
+  if (m && now - m.checked < (m.file ? APP_META_RECHECK_MS : MISS_RETRY_MS)) return m;
+  let file = m && m.file, mtimeMs = file && mtimeOf(file);
+  if (m && file && mtimeMs === m.mtimeMs) { m.checked = now; return m; }
+  if (!mtimeMs) { // not found yet, or moved: look for it again
+    file = null;
+    for (const dir of appSessionDirs(now)) {
+      const f = path.join(dir, hostId + '.json');
+      if ((mtimeMs = mtimeOf(f))) { file = f; break; }
+    }
+  }
+  const meta = file && readJson(file);
+  const from = meta && meta.spawnedFrom && meta.spawnedFrom.sessionId;
+  m = {
+    file: meta ? file : null, mtimeMs, checked: now,
+    parent: HOST_ID.test(String(from)) && from !== hostId ? from : null,
+    prs: meta ? prSummary(meta.prs) : null,
+  };
+  appMeta.set(hostId, m);
+  return m;
+}
+// Each session gets parent: the id of the running session that started it, or null; and prs.
+function addAppMeta(sessions, now) {
   const byHost = new Map(sessions.filter((s) => s.hostId).map((s) => [s.hostId, s.id]));
   for (const s of sessions) {
-    const parentHost = s.hostId ? parentHostOf(s.hostId, now) : null;
-    s.parent = (parentHost && byHost.get(parentHost)) || null;
+    const meta = s.hostId ? appMetaOf(s.hostId, now) : null;
+    s.parent = (meta && meta.parent && byHost.get(meta.parent)) || null;
+    s.prs = meta ? meta.prs : null;
     delete s.hostId;
   }
-  for (const id of spawned.keys()) if (!byHost.has(id)) spawned.delete(id);
+  for (const id of appMeta.keys()) if (!byHost.has(id)) appMeta.delete(id);
 }
 
 // /compact (and other slash commands) write nothing to the transcript until they finish: the entries for a
@@ -699,7 +719,7 @@ function sessionEntry(file, now) {
       name: (typeof s.name === 'string' && s.name) || path.basename(cwd) || 'Session',
       cwd,
       openable: HOST_ID.test(String(s.hostSessionId)), // a desktop-app session that "Open in Claude" can reach
-      hostId: HOST_ID.test(String(s.hostSessionId)) ? s.hostSessionId : null, // replaced by parent in linkParents
+      hostId: HOST_ID.test(String(s.hostSessionId)) ? s.hostSessionId : null, // replaced by parent and prs in addAppMeta
       status: s.status || 'unknown',
       since: s.statusUpdatedAt || s.updatedAt || s.startedAt || now,
       startedAt: s.startedAt || 0,

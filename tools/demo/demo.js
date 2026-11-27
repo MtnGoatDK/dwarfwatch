@@ -33,7 +33,8 @@
   });
 
   function state(t) {
-    // Refactor: reads, edits, runs tests; calls two gnomes in at 2.5 s; levels up at 21 s (at night)
+    // Refactor: reads, edits, runs tests; calls two gnomes in at 2.5 s; its last PR merges at 16.5 s;
+    // levels up at 21 s (at night)
     const a = session('demo-a', 'Refactor the import pipeline', 'claude-opus-5-5', {
       toolCalls: 1400 + Math.floor(t * 3),
       activity: at(t, [[0, tool('Read', 'importer.ts')], [2.5, tool('Agent', 'Explore the parsers')], [4.5, tool('Edit', 'importer.ts')],
@@ -43,18 +44,21 @@
         gnome('g1', 'Explore', 'Map the parsers', t > 26, tool('Grep', 'parse')),
         gnome('g2', 'general-purpose', 'Check edge cases', t > 14, tool('Read', 'cases.json')),
       ],
+      prs: t < 16.5 ? { count: 2, open: 1, merged: 1 } : { count: 2, open: 0, merged: 2 }, // its PR merges at 16.5 s
       dwarf: dwarf('demo-a', t < 21 ? 19 : 20),
     });
     // Login fix: looks things up on the web, edits, then asks you something at 9 s
     const b = session('demo-b', 'Fix the login redirect', 'claude-sonnet-5-5', {
       activity: at(t, [[0, tool('WebFetch', 'oauth docs')], [4, tool('Edit', 'auth.ts')], [7.5, think]]),
       ...(t >= 9 ? { status: 'idle', turn: { at: Date.now(), asked: true } } : {}),
+      prs: { count: 1, open: 1, merged: 0 },
       dwarf: dwarf('demo-b', 8),
     });
     // Release notes: writes, then finishes at 6.5 s and heads for the tavern (its cart is hauled up)
     const c = session('demo-c', 'Write the release notes', 'claude-haiku-5-5', {
       activity: at(t, [[0, tool('Edit', 'CHANGELOG.md')], [3, tool('Read', 'git log')], [5.5, think]]),
       ...(t >= 6.5 ? { status: 'idle', turn: { at: Date.now(), asked: false } } : {}),
+      prs: { count: 1, open: 0, merged: 1 },
       dwarf: dwarf('demo-c', 3),
     });
     // Build speed-up: runs builds and searches the whole time

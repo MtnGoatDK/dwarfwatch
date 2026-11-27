@@ -20,6 +20,8 @@ for you (their dwarf climbs up to the surface with a green "!").
   gallery; its ore climbs that ladder to the windlass.
 - **The model by its pickaxe:** wood, copper, iron, gold or diamond, by the model's price.
 - **Context** per session on its tunnel sign: how full the context window is, with a coloured bar.
+- **Pull requests** on the tunnel sign, like the desktop app shows them: green while any is open,
+  purple once all are merged, with the count; a merge sends up a couple of rockets.
 - **Plan usage:** an estimate of your 5-hour and weekly limits (see below).
 - **A crew that grows.** Dwarves are kept in a roster: free dwarves take new sessions (preferring ones
   that know the project), earn XP per tool call, level up (with fireworks), and can be renamed and
@@ -80,8 +82,8 @@ already uses the port, the server stops and the overlay says so; set `DWARFWATCH
 - the subagent transcripts next to it, for the gnomes;
 - the Claude desktop app's own metadata for each session
   (`%LOCALAPPDATA%\Claude-Data\…\claude-code-sessions\…\local_….json`), only for which session started
-  which (`spawnedFrom`). That file is not documented and has only been seen on Windows; without it
-  every session is simply its own gallery off the main shaft.
+  which (`spawnedFrom`) and its pull requests (`prs`). That file is not documented and has only been
+  seen on Windows; without it every session is simply its own gallery off the main shaft, with no PRs.
 
 It serves the page and a small JSON API on `127.0.0.1` only. `mine.js` is the canvas engine that draws
 the mine; `index.html` is the page and the overlay's UI.

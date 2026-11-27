@@ -1972,10 +1972,15 @@
       const pctFont = tiny ? '600 8px system-ui, sans-serif' : '600 10px system-ui, sans-serif';
       c.font = pctFont;
       const pctW = pctText ? c.measureText(pctText).width + 6 : 0;
+      // pull requests, like the desktop app shows them: the PR icon, green while any is open and purple
+      // once all are merged (grey otherwise), with the count when there is more than one
+      const prs = g.prs, icon = tiny ? 8 : 10;
+      const prText = prs && prs.count > 1 ? String(prs.count) : '';
+      const prW = prs ? icon + (prText ? c.measureText(prText).width + 2 : 0) + 6 : 0;
       c.font = nameFont;
       const maxW = Math.max(40, (g.max - 2) * TILE * S);
-      const label = fit(c, g.name, maxW - 22 - pctW);
-      const w = c.measureText(label).width + 22 + pctW, h = tiny ? 13 : 18;
+      const label = fit(c, g.name, maxW - 22 - pctW - prW);
+      const w = c.measureText(label).width + 22 + pctW + prW, h = tiny ? 13 : 18;
       const x = g.dir > 0 ? (g.ox + 1.6) * TILE * S : (g.ox - 0.6) * TILE * S - w;
       const y = g.r0 * TILE * S + (tiny ? 1 : 4);
       c.fillStyle = '#5a3d27';
@@ -1992,7 +1997,13 @@
       if (pctText) {
         c.font = pctFont;
         c.fillStyle = share >= 0.9 ? '#ffb4a8' : share >= 0.7 ? '#ffd98a' : '#cdbfae';
-        c.fillText(pctText, x + w - pctW + 1, y + h / 2 - 0.5);
+        c.fillText(pctText, x + w - prW - pctW + 1, y + h / 2 - 0.5);
+      }
+      if (prs) {
+        const color = prs.open ? '#3fb950' : prs.merged === prs.count ? '#a371f7' : '#8b949e';
+        const ix = x + w - prW + 1, iy = y + (h - 2 - icon) / 2;
+        prIcon(c, ix, iy, icon, !prs.open && prs.merged === prs.count, color);
+        if (prText) { c.font = pctFont; c.fillStyle = color; c.fillText(prText, ix + icon + 2, y + h / 2 - 0.5); }
       }
       G.signs.push({ x, y, w, h, id });
     }
@@ -2076,6 +2087,28 @@
     c.textAlign = 'center';
     c.fillText(text, x, y - h / 2 + 0.5);
     c.textAlign = 'start';
+  }
+
+  // the pull request icon (two branches joined by an arrow) or, once merged, the merge icon, in a box of
+  // size s at x, y
+  function prIcon(c, x, y, s, merged, color) {
+    const r = s / 7, l = x + r + 0.5, rt = x + s - r - 0.5, top = y + r + 0.5, bot = y + s - r - 0.5;
+    c.save();
+    c.strokeStyle = color; c.lineWidth = Math.max(1, s / 8); c.lineCap = 'round'; c.lineJoin = 'round';
+    const ring = (cx, cy) => { c.beginPath(); c.arc(cx, cy, r, 0, Math.PI * 2); c.stroke(); };
+    ring(l, top); ring(l, bot);
+    c.beginPath(); c.moveTo(l, top + r); c.lineTo(l, bot - r); c.stroke();
+    if (merged) { // a branch curving out of the top one into a ring on the right
+      const my = (top + bot) / 2 + r / 2;
+      ring(rt, my);
+      c.beginPath(); c.moveTo(l, top + r); c.quadraticCurveTo(l, my, rt - r, my); c.stroke();
+    } else { // the right branch goes up and points back at the left one
+      ring(rt, bot);
+      const ay = top;
+      c.beginPath(); c.moveTo(rt, bot - r); c.lineTo(rt, ay + r); c.quadraticCurveTo(rt, ay, rt - r, ay); c.lineTo(l + r * 2.2, ay); c.stroke();
+      c.beginPath(); c.moveTo(l + r * 3.4, ay - r * 1.2); c.lineTo(l + r * 2.2, ay); c.lineTo(l + r * 3.4, ay + r * 1.2); c.stroke();
+    }
+    c.restore();
   }
 
   function roundRect(c, x, y, w, h, r) {
@@ -2190,6 +2223,10 @@
       g.name = s.name;
       g.state = stateOf(s);
       g.parent = s.parent || null; // the session that started this one, if it is running (see layOut)
+      // its pull requests, as the desktop app lists them; a newly merged one sets off a couple of rockets
+      const prs = s.prs || null;
+      if (prs && g.prs && prs.merged > g.prs.merged && !G.first) fireworks(2);
+      g.prs = prs;
     }
     for (const id of [...G.galleries.keys()]) if (!ids.includes(id)) G.galleries.delete(id);
     const key = sessions.map((s) => s.id + (s.parent ? '<' + s.parent : '')).join(',');
