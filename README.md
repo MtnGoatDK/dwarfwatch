@@ -67,7 +67,8 @@ dotnet publish -c Release -o app
 app\Dwarfwatch.exe
 ```
 
-Drag it by its top bar; hold **Alt** while dragging to place it without snapping.
+Drag it by its top bar; hold **Alt** while dragging to place it without snapping. If another program
+already uses the port, the server stops and the overlay says so; set `DWARFWATCH_PORT` to a free port.
 
 ## How it works
 
@@ -91,15 +92,19 @@ That link is not documented, so an app update could change it.
 ### Plan usage (an estimate)
 
 The usage meters are worked out from the token use in your local transcripts, scaled to match numbers
-you read off the Claude app once. Copy `usage-calibration.example.json` to `usage-calibration.json` and
-fill in the 5-hour and weekly percentages and reset times the app shows you at a given moment. Without
-that file the meters are hidden. Usage from other devices or claude.ai in a browser is not included, so
-the estimate drifts over time; update the file now and then.
+you read off the Claude app once. Copy `usage-calibration.example.json` to
+`%LOCALAPPDATA%\Dwarfwatch\usage-calibration.json` (`~/.local/share/Dwarfwatch/` elsewhere) and fill in
+the 5-hour and weekly percentages and reset times the app shows you at a given moment, and when you read
+them (`measuredAt`). Without that file the meters are hidden. Usage from other devices or claude.ai in a
+browser is not included, so the estimate drifts over time; type new numbers and a new `measuredAt` into
+the file now and then (the `capacity` the server adds to it is worked out again for each new reading).
+
+The file used to go next to `server.js`; one found there is copied to the data folder on start.
 
 ### Your data
 
 Everything stays on your machine. The overlay keeps its window position, and the server keeps the dwarf
-roster, the ore and your day-and-night hours, in `%LOCALAPPDATA%\Dwarfwatch\` (`~/.local/share/Dwarfwatch`
+roster, the ore, your day-and-night hours and the usage calibration, in `%LOCALAPPDATA%\Dwarfwatch\` (`~/.local/share/Dwarfwatch`
 elsewhere). It used to be called Agent Watch; data in an old `AgentWatch` folder is copied over on first
 start, and the old `AGENT_WATCH_*` settings below still work.
 
@@ -138,6 +143,7 @@ write `demo.gif` (needs Pillow).
 | `PORT` | `4777` | the server's port |
 | `CLAUDE_CONFIG_DIR` | `~/.claude` | where Claude Code keeps its sessions and transcripts |
 | `DWARFWATCH_ROSTER` | `%LOCALAPPDATA%\Dwarfwatch\roster.json` | the dwarf roster and ore file |
+| `DWARFWATCH_CALIBRATION` | `%LOCALAPPDATA%\Dwarfwatch\usage-calibration.json` | the plan usage calibration |
 | `CONTEXT_WINDOW` | `1000000` | the context window size the tunnel signs measure against |
 | `DWARFWATCH_PORT` | `4777` | the port the overlay app connects to |
 | `DWARFWATCH_SERVER` | found next to the app | the `server.js` the overlay app starts when none is running |

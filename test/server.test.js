@@ -14,6 +14,7 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dwarfwatch-test-'));
 const CLAUDE = path.join(tmp, 'claude');
 process.env.CLAUDE_CONFIG_DIR = CLAUDE;
 process.env.DWARFWATCH_ROSTER = path.join(tmp, 'data', 'roster.json');
+process.env.DWARFWATCH_CALIBRATION = path.join(tmp, 'data', 'usage-calibration.json');
 process.env.LOCALAPPDATA = path.join(tmp, 'appdata'); // where the Claude desktop app's session metadata is looked for
 const dw = require('../server.js');
 
@@ -46,6 +47,10 @@ test('pricing ranks models into pickaxe tiers', () => {
   assert.equal(dw.pricing('claude-fable-5-2').tier, 'diamond');
   assert.deepEqual(dw.pricing('claude-opus-5-5', 'fast'), { tier: 'diamond', input: 8, output: 40, fast: true });
   assert.equal(dw.pricing('claude-sonnet-5-5', 'fast').fast, false, 'no fast price: the normal one');
+  assert.equal(dw.pricing('claude-opus-6').tier, 'gold', 'a newer model is priced like its family');
+  assert.equal(dw.pricing('claude-sonnet-6-1-20270101').tier, 'iron');
+  assert.equal(dw.pricing('claude-haiku-6').tier, 'copper');
+  assert.equal(dw.pricing('claude-opus-6', 'fast').tier, 'diamond');
   assert.deepEqual(dw.pricing('some-new-model'), { tier: 'wood', input: null, output: null, fast: false });
   assert.equal(dw.pricing(undefined).tier, 'wood');
 });
@@ -312,6 +317,38 @@ test('reply cost: cache writes cost more, cache reads less', () => {
   const cost = dw.replyCost('claude-opus-5-5', { input_tokens: 1e6, cache_creation_input_tokens: 1e6, cache_read_input_tokens: 1e6, output_tokens: 1e6 });
   assert.ok(Math.abs(cost - (4 + 5 + 0.4 + 20)) < 1e-9);
   assert.equal(dw.replyCost('unknown-model', { input_tokens: 1e6 }), 0);
+});
+
+test('usage: scaled by the calibration, and recalibrated when new numbers are typed over it', async () => {
+  const now = Date.now(), min = 60 * 1000, iso = (t) => new Date(t).toISOString();
+  const reply = (id, t) => ({ type: 'assistant', timestamp: iso(t), message: { id, model: 'claude-opus-5-5', role: 'assistant', content: [], usage: { output_tokens: 1e6 } } });
+  const folder = path.join(CLAUDE, 'projects', 'usage-test');
+  fs.mkdirSync(folder, { recursive: true });
+  // the same cost before the reading and after it, so usage has doubled since
+  fs.writeFileSync(path.join(folder, 'u.jsonl'), jsonl([reply('u1', now - 100 * min), reply('u2', now - 30 * min)]));
+  const file = process.env.DWARFWATCH_CALIBRATION;
+  const reading = (measured, five, week) => ({
+    measuredAt: iso(measured),
+    fiveHour: { percent: five, resetsAt: iso(now + 180 * min) },
+    weekly: { percent: week, resetsAt: iso(now + 24 * 60 * min) },
+  });
+
+  fs.writeFileSync(file, JSON.stringify(reading(now - 60 * min, 10, 5)));
+  await dw.refreshUsage();
+  assert.equal(dw.usage().fiveHour.percent, 20);
+  assert.equal(dw.usage().weekly.percent, 10);
+  const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.ok(saved.fiveHour.capacity > 0, 'the capacity is saved');
+  assert.equal(saved.fiveHour.capacityFrom, saved.measuredAt);
+
+  // new numbers typed over the old reading, its saved capacity left in the file
+  const next = { ...saved, ...reading(now - 10 * min, 50, 30) };
+  next.fiveHour.capacity = saved.fiveHour.capacity; next.fiveHour.capacityFrom = saved.measuredAt;
+  next.weekly.capacity = saved.weekly.capacity; next.weekly.capacityFrom = saved.measuredAt;
+  fs.writeFileSync(file, JSON.stringify(next));
+  await dw.refreshUsage();
+  assert.equal(dw.usage().fiveHour.percent, 50);
+  assert.equal(dw.usage().weekly.percent, 30);
 });
 
 // --- the HTTP server --------------------------------------------------------------------------------

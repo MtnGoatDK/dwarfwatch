@@ -108,8 +108,10 @@ sealed class OverlayForm : Form
         core.NavigationCompleted += (_, e) =>
         {
             if (e.IsSuccess || !core.Source.StartsWith(Origin, StringComparison.OrdinalIgnoreCase)) return;
-            // The server is not answering (yet): say so, and try again in a few seconds.
-            core.NavigateToString(WaitingPage);
+            // The server is not answering (yet): say so, and try again in a few seconds; less often when
+            // the server we started found the port taken by some other program.
+            core.NavigateToString(PortBusy ? PortBusyPage : WaitingPage);
+            _retry.Interval = PortBusy ? 15000 : 3000;
             _retry.Start();
         };
     }
@@ -145,10 +147,19 @@ sealed class OverlayForm : Form
         Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
     }
 
-    static readonly string WaitingPage =
+    static string MessagePage(string text) =>
         "<html><body style=\"margin:0;height:100vh;display:grid;place-items:center;background:#120e0b;" +
-        "color:#b3a594;font:13px system-ui;app-region:drag\">Waiting for the Dwarfwatch server on " +
-        $"localhost:{Port}…</body></html>";
+        "color:#b3a594;font:13px system-ui;text-align:center;padding:0 16px;box-sizing:border-box;app-region:drag\">" +
+        text + "</body></html>";
+
+    static readonly string WaitingPage = MessagePage($"Waiting for the Dwarfwatch server on localhost:{Port}…");
+
+    static readonly string PortBusyPage = MessagePage(
+        $"Port {Port} is in use by another program, so the Dwarfwatch server can't start.<br><br>" +
+        "Close that program, or set DWARFWATCH_PORT to a free port and start Dwarfwatch again.");
+
+    /// <summary>The server this window started stopped because its port was taken (server.js exits with 2).</summary>
+    bool PortBusy => _server is { HasExited: true, ExitCode: 2 };
 
     /* ---------- server ---------- */
 
@@ -183,7 +194,7 @@ sealed class OverlayForm : Form
             Environment = { ["PORT"] = Port },
         });
         if (_server is not null) KillWithThisApp(_server);
-        for (var i = 0; i < 20 && !await ServerUpAsync(); i++) await Task.Delay(250);
+        for (var i = 0; i < 20 && _server is not { HasExited: true } && !await ServerUpAsync(); i++) await Task.Delay(250);
     }
 
     static string? FindServerScript()

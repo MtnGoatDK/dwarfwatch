@@ -34,7 +34,9 @@ const MODEL_ALIASES = { opus: 'opus-5-5', sonnet: 'sonnet-5-5', haiku: 'haiku-5-
 
 function pricing(model, speed) {
   const bare = String(model || '').toLowerCase().replace(/^claude-/, '').replace(/\[.*\]$/, '').replace(/-\d{8}$/, '');
-  const key = MODEL_ALIASES[bare] || bare;
+  // A model newer than this table is priced like the current model of its family (opus-6 like opus).
+  const family = (bare.match(/^[a-z]+/) || [''])[0];
+  const key = MODEL_ALIASES[bare] || (PRICES[bare] ? bare : MODEL_ALIASES[family] || bare);
   const fast = speed === 'fast' ? FAST_PRICES[key] : null;
   const price = fast || PRICES[key];
   if (!price) return { tier: 'wood', input: null, output: null, fast: false };
@@ -46,6 +48,14 @@ function pricing(model, speed) {
 const readJson = (file) => {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
 };
+
+// Whole file or nothing, even if the server is stopped mid-write: write a temporary file, then rename it.
+function writeJson(file, data, indent = 1) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = file + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(data, null, indent));
+  fs.renameSync(tmp, file);
+}
 
 const alive = (pid) => {
   try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
@@ -375,10 +385,7 @@ function saveRoster(force) {
   for (const id of Object.keys(roster.counted)) if (!roster.history[id]) delete roster.counted[id];
   for (const id of Object.keys(roster.countedOut)) if (!roster.history[id]) delete roster.countedOut[id];
   try {
-    fs.mkdirSync(path.dirname(ROSTER_FILE), { recursive: true });
-    const tmp = ROSTER_FILE + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(roster, null, 1));
-    fs.renameSync(tmp, ROSTER_FILE); // whole file or nothing, even if the server is stopped mid-write
+    writeJson(ROSTER_FILE, roster);
     rosterDirty = false; rosterSavedAt = Date.now();
   } catch (err) {
     console.warn('could not save the dwarf roster:', err.message);
@@ -559,8 +566,7 @@ let schedule = loadSchedule();
 function saveSchedule(next) {
   schedule = next; // null: back to the default
   try {
-    fs.mkdirSync(path.dirname(SETTINGS_FILE), { recursive: true });
-    fs.writeFileSync(SETTINGS_FILE, JSON.stringify({ schedule }, null, 1));
+    writeJson(SETTINGS_FILE, { schedule });
   } catch (err) {
     console.warn('could not save the settings:', err.message);
   }
@@ -717,8 +723,19 @@ function sessionEntry(file, now) {
 // from the app's real numbers (usage-calibration.json: percent and reset time of each window, plus when
 // they were read). Usage from other devices or claude.ai in a browser is not in the local logs, so the
 // estimate drifts; recalibrating fixes it.
+// The file lives with the roster, so a new release unzipped somewhere else keeps it. It used to sit next to
+// server.js: one found there is copied over on start (and left where it was).
 const fsp = fs.promises;
-const CALIBRATION_FILE = path.join(__dirname, 'usage-calibration.json');
+const CALIBRATION_FILE = process.env.DWARFWATCH_CALIBRATION || path.join(path.dirname(ROSTER_FILE), 'usage-calibration.json');
+function bringOverCalibration() {
+  const old = path.join(__dirname, 'usage-calibration.json');
+  if (process.env.DWARFWATCH_CALIBRATION || fs.existsSync(CALIBRATION_FILE) || !fs.existsSync(old)) return;
+  try {
+    fs.mkdirSync(path.dirname(CALIBRATION_FILE), { recursive: true });
+    fs.copyFileSync(old, CALIBRATION_FILE);
+    console.log(`moved the usage calibration to ${CALIBRATION_FILE}; edit it there from now on`);
+  } catch (err) { console.warn('could not copy the usage calibration:', err.message); }
+}
 const HOUR = 3600 * 1000, FIVE_HOURS = 5 * HOUR, WEEK = 7 * 24 * HOUR;
 const usageScan = { files: new Map(), busy: false, summary: null };
 
@@ -807,16 +824,21 @@ function usageSummary(now, complete) {
   let changed = false;
   for (const [key, span] of [['fiveHour', FIVE_HOURS], ['weekly', WEEK]]) {
     const w = cal[key];
-    if (!w.capacity && w.percent > 0) {
+    // A capacity is worked out once per reading (capacityFrom: the measuredAt it came from), so new
+    // numbers typed over an old reading are used instead of the capacity saved from it. Files from
+    // before capacityFrom keep their capacity, which is taken to be from the reading they hold.
+    if (w.capacity && w.capacityFrom === undefined) { w.capacityFrom = cal.measuredAt; changed = true; }
+    if ((!w.capacity || w.capacityFrom !== cal.measuredAt) && w.percent > 0) {
       // Saved for good, so only from a scan that read every transcript (a locked file would make it too
       // small and every later percentage too high), and never zero (no replies in that window yet).
       const capacity = costBetween(Date.parse(w.resetsAt) - span, measured) / (w.percent / 100);
       if (!complete || !(capacity > 0)) return null;
       w.capacity = capacity;
+      w.capacityFrom = cal.measuredAt;
       changed = true;
     }
   }
-  if (changed) { try { fs.writeFileSync(CALIBRATION_FILE, JSON.stringify(cal, null, 2)); } catch { /* keep in memory */ } }
+  if (changed) { try { writeJson(CALIBRATION_FILE, cal, 2); } catch { /* keep in memory */ } }
 
   let weekEnd = Date.parse(cal.weekly.resetsAt);
   while (weekEnd <= now) weekEnd += WEEK;
@@ -956,11 +978,17 @@ const createServer = () => http.createServer((req, res) => {
 
 function start() {
   if (bringOverOldData()) { Object.assign(roster, loadRoster()); schedule = loadSchedule(); }
+  bringOverCalibration();
   process.on('exit', () => saveRoster(true));
   for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { saveRoster(true); process.exit(0); });
   refreshUsage();
   setInterval(refreshUsage, 30 * 1000);
-  createServer().listen(PORT, '127.0.0.1', () => {
+  createServer().on('error', (err) => {
+    if (err.code !== 'EADDRINUSE') throw err;
+    // Exit code 2 tells the overlay app the port is taken, so it can say so instead of waiting forever.
+    console.error(`Port ${PORT} is already in use. Is Dwarfwatch already running? Otherwise set PORT to a free port.`);
+    process.exit(2);
+  }).listen(PORT, '127.0.0.1', () => {
     console.log(`Dwarfwatch running at http://localhost:${PORT}`);
   });
 }
@@ -970,6 +998,6 @@ if (require.main === module) start();
 module.exports = {
   pricing, freshStats, ingest, askedYou, readTranscript, listAgents, transcriptPath,
   levelOf, xpFor, assignDwarves, customiseDwarf, cleanSchedule, mineOre, haulOre, moveToStore,
-  usageSummary, replyCost, createServer, roster,
+  replyCost, refreshUsage, usage: () => usageScan.summary, createServer, roster,
   _setLiveSessions: (ids) => { liveSessions = new Set(ids); }, // for the tests
 };
