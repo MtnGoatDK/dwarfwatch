@@ -103,6 +103,27 @@ roster, the ore and your day-and-night hours, in `%LOCALAPPDATA%\Dwarfwatch\` (`
 elsewhere). It used to be called Agent Watch; data in an old `AgentWatch` folder is copied over on first
 start, and the old `AGENT_WATCH_*` settings below still work.
 
+### Tests
+
+```
+node --test
+```
+
+The tests (`test/`) cover what the server reads from Claude Code's files: tool calls, tokens, whether a
+turn asked you something, subagents, the roster, ore, schedules and the HTTP guards. They run on made-up
+transcripts in a temporary folder, never on yours. CI runs them on every push, along with a build of the
+overlay.
+
+### Building a release
+
+```
+.\scripts\release.ps1
+```
+
+This runs the tests, publishes the overlay as a single self-contained exe, and zips it with the server
+and page files into `release\Dwarfwatch-v<version>-win-x64.zip`, taking the version from `package.json`
+(or `-Version 1.2.3`). Tagging and uploading to GitHub are left to you; the script prints the commands.
+
 ### Re-recording the demo
 
 `tools/demo/` plays a scripted story (fake sessions, nothing of yours) on a virtual clock and records
@@ -120,3 +141,12 @@ write `demo.gif` (needs Pillow).
 | `CONTEXT_WINDOW` | `1000000` | the context window size the tunnel signs measure against |
 | `DWARFWATCH_PORT` | `4777` | the port the overlay app connects to |
 | `DWARFWATCH_SERVER` | found next to the app | the `server.js` the overlay app starts when none is running |
+
+## License
+
+Dwarfwatch is free software under the [GNU General Public License v3.0](LICENSE).
+
+The overlay uses the WebView2 SDK (BSD-3-Clause style, Microsoft), and the release exe includes the .NET runtime
+(MIT).
+
+Dwarfwatch isn't affiliated with or endorsed by Anthropic.

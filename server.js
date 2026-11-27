@@ -322,17 +322,19 @@ function listAgents(transcript, now) {
 const DATA_ROOT = process.env.LOCALAPPDATA || path.join(os.homedir(), '.local', 'share');
 const ROSTER_FILE = process.env.DWARFWATCH_ROSTER || process.env.AGENT_WATCH_ROSTER || path.join(DATA_ROOT, 'Dwarfwatch', 'roster.json');
 // The project used to be called Agent Watch: on first start, bring the roster and settings over from its
-// folder (the old folder stays as it was, as a backup).
-(function bringOverOldData() {
-  if (process.env.DWARFWATCH_ROSTER || process.env.AGENT_WATCH_ROSTER) return;
+// folder (the old folder stays as it was, as a backup). Returns whether anything was copied.
+function bringOverOldData() {
+  if (process.env.DWARFWATCH_ROSTER || process.env.AGENT_WATCH_ROSTER) return false;
   const oldDir = path.join(DATA_ROOT, 'AgentWatch'), newDir = path.dirname(ROSTER_FILE);
+  let copied = false;
   for (const name of ['roster.json', 'settings.json']) {
     const from = path.join(oldDir, name), to = path.join(newDir, name);
     try {
-      if (!fs.existsSync(to) && fs.existsSync(from)) { fs.mkdirSync(newDir, { recursive: true }); fs.copyFileSync(from, to); }
+      if (!fs.existsSync(to) && fs.existsSync(from)) { fs.mkdirSync(newDir, { recursive: true }); fs.copyFileSync(from, to); copied = true; }
     } catch (err) { console.warn('could not bring over ' + name + ':', err.message); }
   }
-})();
+  return copied;
+}
 const XP_STEP = 20; // XP for level 2; each level after needs XP_STEP more than the one before
 
 // Level from XP: level n starts at XP_STEP * n * (n - 1) / 2 (0, 20, 60, 120, 200, 300, …).
@@ -535,8 +537,6 @@ function customiseDwarf(body) {
   saveRoster(true);
   return true;
 }
-process.on('exit', () => saveRoster(true));
-for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { saveRoster(true); process.exit(0); });
 
 // --- day and night -------------------------------------------------------------
 // When it is daylight in the mine: the work days and the daylight hours (one or more windows; the
@@ -554,7 +554,8 @@ function cleanSchedule(sched) {
   }
   return { days, windows };
 }
-let schedule = cleanSchedule((readJson(SETTINGS_FILE) || {}).schedule);
+const loadSchedule = () => cleanSchedule((readJson(SETTINGS_FILE) || {}).schedule);
+let schedule = loadSchedule();
 function saveSchedule(next) {
   schedule = next; // null: back to the default
   try {
@@ -848,8 +849,6 @@ async function refreshUsage() {
     usageScan.busy = false;
   }
 }
-refreshUsage();
-setInterval(refreshUsage, 30 * 1000);
 
 // --- http --------------------------------------------------------------------
 
@@ -858,7 +857,7 @@ const STATIC = {
   '/mine.js': ['mine.js', 'text/javascript; charset=utf-8'],
 };
 
-http.createServer((req, res) => {
+const createServer = () => http.createServer((req, res) => {
   // Loopback only, and refuse foreign Host headers (DNS rebinding).
   const host = String(req.headers.host || '').replace(/:\d+$/, '');
   if (host !== 'localhost' && host !== '127.0.0.1') { res.writeHead(403).end(); return; }
@@ -949,6 +948,28 @@ http.createServer((req, res) => {
   } else {
     res.writeHead(404).end();
   }
-}).listen(PORT, '127.0.0.1', () => {
-  console.log(`Dwarfwatch running at http://localhost:${PORT}`);
 });
+
+// --- start -------------------------------------------------------------------
+// Everything with side effects (old data copied over, timers, signal handlers, the port) happens here,
+// so the tests can load this file without starting a server.
+
+function start() {
+  if (bringOverOldData()) { Object.assign(roster, loadRoster()); schedule = loadSchedule(); }
+  process.on('exit', () => saveRoster(true));
+  for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { saveRoster(true); process.exit(0); });
+  refreshUsage();
+  setInterval(refreshUsage, 30 * 1000);
+  createServer().listen(PORT, '127.0.0.1', () => {
+    console.log(`Dwarfwatch running at http://localhost:${PORT}`);
+  });
+}
+
+if (require.main === module) start();
+
+module.exports = {
+  pricing, freshStats, ingest, askedYou, readTranscript, listAgents, transcriptPath,
+  levelOf, xpFor, assignDwarves, customiseDwarf, cleanSchedule, mineOre, haulOre, moveToStore,
+  usageSummary, replyCost, createServer, roster,
+  _setLiveSessions: (ids) => { liveSessions = new Set(ids); }, // for the tests
+};
